@@ -1,0 +1,20 @@
+# Obsidian - workspace changes with every session
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/graph.json
+
+# Obsidian trash
+.trash/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Plugins cache
+.obsidian/plugins/*/data.json
+
+# Secrets
+.env
+*.key
+*.pem
