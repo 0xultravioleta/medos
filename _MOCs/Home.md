@@ -18,6 +18,7 @@ aliases:
 |------|------|
 | Master Plan | [[HEALTHCARE_OS_MASTERPLAN]] |
 | Architecture | [[MOC-Architecture]] |
+| AI Agent Architecture | [[MOC-Agent-Architecture]] |
 | Domain Knowledge | [[MOC-Domain-Knowledge]] |
 | Projects | [[MOC-Projects]] |
 | Business | [[MOC-Business]] |

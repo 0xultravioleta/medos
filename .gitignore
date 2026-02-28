@@ -18,3 +18,11 @@ desktop.ini
 .env
 *.key
 *.pem
+
+.unused
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# QA screenshots (local only)
+*.png
