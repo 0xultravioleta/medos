@@ -1,6 +1,6 @@
 ---
 type: epic
-date: "2026-02-28"
+date: "2026-02-27"
 status: planning
 priority: 5
 tags:
@@ -17,491 +17,801 @@ target-date: "2026-05-01"
 
 # EPIC-005: Revenue Cycle MVP
 
-> **Timeline:** Week 7-10 (2026-04-17 to 2026-05-01)
+> **Timeline:** Week 7-10 (2026-04-10 to 2026-05-01)
 > **Phase:** 1 - Foundation
-> **Dependencies:** [[EPIC-003-fhir-data-layer]] (FHIR CRUD, search, claims resources), [[EPIC-004-ai-clinical-documentation]] (AI coding suggestions, encounter data)
-> **Blocks:** [[EPIC-006-pilot-readiness]] (billing must be functional for pilot launch)
+> **Dependencies:** [[EPIC-003-fhir-data-layer]] (FHIR CRUD, search), [[EPIC-004-ai-clinical-documentation]] (AI coding, FHIR resources from notes)
+> **Blocks:** [[EPIC-006-pilot-readiness]]
 
-## Overview
+## Objective
 
-This epic delivers the minimum viable revenue cycle management (RCM) pipeline for MedOS, covering the full lifecycle from eligibility verification through claims submission and remittance processing. The system integrates with the [[EPIC-004-ai-clinical-documentation]] AI coding engine to auto-populate charges from clinical encounters, generates compliant X12 EDI transactions for clearinghouse submission, and provides a denial tracking and analytics dashboard. By automating the charge capture-to-payment loop, MedOS aims to reduce days in A/R, decrease claim denial rates, and eliminate manual coding bottlenecks for pilot practices. All billing data is persisted as FHIR resources (Claim, ClaimResponse, Coverage, ExplanationOfBenefit) per [[ADR-001-fhir-native-data-model]], ensuring a unified clinical-financial data model.
-
----
-
-## Goals
-
-- [ ] Verify patient insurance eligibility in real-time before encounters
-- [ ] Auto-capture charges from AI-generated clinical documentation
-- [ ] Generate compliant X12 837P claims for professional services
-- [ ] Process remittance (X12 835) and post payments automatically
-- [ ] Track and analyze claim denials with AI-powered prediction
-- [ ] Provide revenue analytics dashboard for practice administrators
+Build the minimum viable revenue cycle management (RCM) system that takes AI-coded encounters from the clinical documentation module and carries them through the billing pipeline: eligibility verification, charge capture, claims generation, submission, remittance processing, and denial tracking. For pilot practices, this must demonstrably reduce claim denials and accelerate collections.
 
 ---
 
-## Success Metrics
+## Timeline (Gantt)
 
-| Metric | Target | Measurement |
-|---|---|---|
-| Eligibility verification turnaround | < 15 seconds real-time | Measure API response time from payer X12 270/271 exchange |
-| Clean claim rate | > 95% (first submission) | Track claims accepted without rejection on first submission |
-| Auto charge capture rate | > 80% of encounters | Percentage of encounters with auto-populated charges from AI coding |
-| Days in A/R | < 35 days | Average time from service date to payment posting |
-| Denial rate | < 5% of claims | Track denied claims as percentage of total submitted |
-| Denial appeal success rate | > 50% | Track overturned denials from AI-assisted appeals |
+```
+Week 7 (Apr 10 - Apr 17)
+|----- T1: Eligibility Verification (270/271) -----|
+|----- T2: Prior Auth Status Tracking --------------|
+|----------- T3: Prior Auth Automation v1 ----------|
+
+Week 8 (Apr 18 - Apr 24)
+|----- T4: AI Coding Engine v1 ---------------------|
+|----- T5: Charge Capture Workflow ------------------|
+
+Week 9 (Apr 25 - May 1)
+|----- T6: Claims Generation (837P) -----------------|
+|----- T7: Claims Scrubbing Rules Engine -------------|
+|----------- T8: Clearinghouse Integration ----------|
+
+Week 10 (May 1 - May 8)
+|----- T9: Remittance Processing (835) --------------|
+|----- T10: Denial Tracking + AI Prediction ---------|
+|----------- T11: Revenue Analytics Dashboard -------|
+|----------- T12: Integration Testing --------------|
+```
 
 ---
 
 ## Tasks
 
-### T1: Eligibility Verification (X12 270/271)
+### T1: Eligibility Verification Engine (X12 270/271)
 **Complexity:** L
 **Estimate:** 3 days
-**Dependencies:** [[EPIC-003-fhir-data-layer]] T4 (FHIR CRUD for Coverage resource)
-**References:** [[Revenue-Cycle-Deep-Dive]], [[X12-EDI-Deep-Dive]], [[Prior-Authorization-Deep-Dive]]
+**Dependencies:** [[EPIC-002-auth-identity-system]] T6 (API keys for payer integrations)
+**References:** [[Revenue-Cycle-Deep-Dive]], [[X12-EDI-Deep-Dive]]
 
 **Description:**
-Implement real-time insurance eligibility verification using X12 270 (inquiry) and 271 (response) transactions via clearinghouse integration. Results are stored as FHIR Coverage and CoverageEligibilityResponse resources.
+Build real-time patient insurance eligibility verification using X12 270/271 transactions. Practices need to verify coverage before rendering services to avoid claim denials.
 
 **Subtasks:**
-- [ ] Build X12 270 eligibility inquiry message generator:
-  - Subscriber demographics (from FHIR Patient)
-  - Payer identification (from FHIR Organization/InsurancePlan)
-  - Service type codes (medical, mental health, pharmacy, etc.)
-  - Date of service range
-- [ ] Integrate with clearinghouse API for 270/271 exchange (e.g., Availity, Change Healthcare)
-- [ ] Parse X12 271 eligibility response:
-  - Active/inactive coverage status
-  - Copay, deductible, coinsurance amounts
-  - In-network vs out-of-network benefits
-  - Prior authorization requirements
-  - Remaining deductible and out-of-pocket
-- [ ] Persist eligibility results as FHIR resources:
-  - FHIR Coverage (insurance plan details)
-  - FHIR CoverageEligibilityResponse (benefit details)
-- [ ] Build eligibility check UI component:
-  - One-click verification from patient chart
-  - Display benefit summary with copay/deductible amounts
-  - Alert on inactive coverage or missing authorization
-- [ ] Implement batch eligibility checking (verify all patients for next day's schedule)
+- [ ] Implement X12 270 (Eligibility Inquiry) generator:
+  - Map FHIR Coverage resource to X12 270 segments:
+    - ISA/GS envelope (sender/receiver IDs, dates)
+    - ST/BHT transaction header
+    - 2000A Information Source (payer)
+    - 2000B Information Receiver (practice)
+    - 2000C Subscriber (patient/subscriber)
+    - 2100C Subscriber Name
+    - 2000D Dependent (if patient != subscriber)
+  - Support inquiry types:
+    - Active coverage verification
+    - Co-pay/deductible amounts
+    - Service-type-specific benefits (office visit, specialist, imaging, etc.)
+    - Remaining deductible
+    - Out-of-pocket maximum status
+- [ ] Implement X12 271 (Eligibility Response) parser:
+  - Parse all benefit information segments (EB loops)
+  - Extract:
+    - Coverage active/inactive status
+    - Plan name and group number
+    - Co-pay amounts by service type
+    - Deductible (individual/family, met/remaining)
+    - Out-of-pocket maximum (met/remaining)
+    - Prior authorization requirements
+    - Referral requirements
+    - In-network vs. out-of-network benefits
+  - Handle AAA (error) segments gracefully
+- [ ] Create eligibility verification API:
+  ```
+  POST /api/v1/eligibility/verify
+  {
+    "patient_id": "uuid",
+    "coverage_id": "uuid",
+    "service_type": "office_visit",
+    "date_of_service": "2026-04-15"
+  }
+
+  Response:
+  {
+    "status": "active",
+    "plan_name": "Blue Cross PPO Gold",
+    "copay": { "office_visit": 25.00, "specialist": 50.00 },
+    "deductible": { "individual": 1500.00, "remaining": 750.00 },
+    "prior_auth_required": false,
+    "referral_required": false,
+    "raw_271": "..."
+  }
+  ```
+- [ ] Implement batch eligibility verification:
+  - Verify all patients with appointments for next business day
+  - Run nightly at 8 PM (configurable)
+  - Flag patients with inactive/changed coverage
+  - Alert front desk for follow-up
+- [ ] Store eligibility results as FHIR CoverageEligibilityResponse resources
+- [ ] Implement eligibility result caching (24-hour TTL)
 
 **Acceptance Criteria:**
-- [ ] Real-time eligibility response in < 15 seconds
-- [ ] Correct parsing of major payer 271 responses (Medicare, Medicaid, top 10 commercial)
-- [ ] FHIR Coverage and CoverageEligibilityResponse resources created
-- [ ] Batch eligibility runs nightly for next-day scheduled patients
-- [ ] UI displays actionable benefit information
+- [ ] Real-time eligibility check returns in < 10 seconds
+- [ ] Correctly parses 271 responses from top 5 payers (BCBS, Aetna, UHC, Cigna, Humana)
+- [ ] Batch verification runs for next-day appointments
+- [ ] Inactive coverage flagged and front desk alerted
+- [ ] Results stored as FHIR resources with audit trail
+- [ ] X12 transaction logs retained for 7 years
 
 ---
 
-### T2: Prior Authorization Tracking
+### T2: Prior Authorization Status Tracking Dashboard
 **Complexity:** M
 **Estimate:** 2 days
 **Dependencies:** T1
 **References:** [[Prior-Authorization-Deep-Dive]], [[Revenue-Cycle-Deep-Dive]]
 
 **Description:**
-Track prior authorization requirements and status for procedures, medications, and referrals. Integrate with payer portals where APIs are available, and provide manual tracking workflow otherwise.
+Build a dashboard for tracking prior authorization requests across payers. Prior auths are the biggest pain point in RCM -- delayed auths delay care and payment.
 
 **Subtasks:**
-- [ ] Build prior auth requirement detection:
-  - Parse 271 eligibility responses for auth-required service types
-  - Maintain payer-specific auth requirement rules database
-  - Alert providers when ordered services require authorization
-- [ ] Implement auth request tracking workflow:
-  - Create auth request from ServiceRequest/MedicationRequest
-  - Track status: Submitted -> Pending -> Approved/Denied/Partial
-  - Store auth reference numbers linked to FHIR Claim
-  - Expiration date tracking with renewal alerts
-- [ ] Build prior auth dashboard:
-  - Pending authorizations with days waiting
-  - Expiring authorizations (next 30 days)
-  - Denied authorizations with appeal deadlines
-- [ ] Implement FHIR ClaimResponse for auth decisions
-- [ ] Create auth document attachment support (clinical notes, lab results)
+- [ ] Design prior auth data model:
+  ```sql
+  CREATE TABLE prior_authorizations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    patient_id UUID NOT NULL,
+    encounter_id UUID,
+    payer_id UUID NOT NULL,
+    service_type VARCHAR(50) NOT NULL,
+    cpt_codes TEXT[] NOT NULL,
+    icd10_codes TEXT[] NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    submitted_at TIMESTAMPTZ,
+    decision_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    auth_number VARCHAR(100),
+    denial_reason TEXT,
+    payer_reference VARCHAR(255),
+    clinical_docs JSONB,
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  ```
+- [ ] Build prior auth tracking dashboard (Next.js):
+  - Kanban view: Draft | Submitted | Pending | Approved | Denied
+  - List view with filters: by payer, by provider, by status, by date range
+  - Color coding: green (approved), yellow (pending > 5 days), red (denied/expiring)
+  - Click into detail view: patient info, service details, clinical docs, timeline
+- [ ] Implement status update workflow:
+  - Manual status updates from staff
+  - Automated status checks via payer portals (stretch goal)
+  - Expiration alerts (30, 14, 7 days before expiry)
+  - Notification to provider when decision received
+- [ ] Implement reporting:
+  - Average time to decision by payer
+  - Approval rate by payer and service type
+  - Denial reasons breakdown
+  - Expiring authorizations report
+- [ ] Create FHIR ClaimResponse mapping for prior auth decisions
 
 **Acceptance Criteria:**
-- [ ] Auth requirements detected from eligibility data for major payers
-- [ ] Auth status tracked through full lifecycle
-- [ ] Expiration alerts sent 14 days before auth expires
-- [ ] Auth reference numbers linked to claims for clean submission
+- [ ] Dashboard shows all prior auths with current status
+- [ ] Status filters and sorting work correctly
+- [ ] Expiration alerts fire at configured intervals
+- [ ] Reporting shows payer-level metrics
+- [ ] Staff can update status and attach documents
 
 ---
 
-### T3: AI Coding Engine v1
+### T3: Basic Prior Authorization Automation
 **Complexity:** L
 **Estimate:** 3 days
-**Dependencies:** [[EPIC-004-ai-clinical-documentation]] T6 (AI coding suggestions)
+**Dependencies:** T2, [[EPIC-004-ai-clinical-documentation]] T3 (clinical NLU)
+**References:** [[Prior-Authorization-Deep-Dive]], [[ADR-003-ai-agent-framework]]
+
+**Description:**
+Automate the clinical documentation gathering and submission for prior authorization requests. AI reviews clinical notes, gathers supporting documentation, and pre-fills the prior auth form.
+
+**Subtasks:**
+- [ ] Implement clinical documentation assembly:
+  - From AI-generated SOAP notes (EPIC-004), extract:
+    - Relevant diagnoses (ICD-10)
+    - Requested procedure (CPT)
+    - Medical necessity justification
+    - Previous treatments tried and failed
+    - Relevant lab results and imaging
+  - Package into prior auth submission format
+- [ ] Implement payer-specific requirements engine:
+  ```json
+  {
+    "payer": "BCBS",
+    "service": "MRI_lumbar",
+    "requirements": {
+      "diagnoses_required": true,
+      "conservative_treatment_documented": true,
+      "conservative_treatment_duration_days": 42,
+      "imaging_required": false,
+      "clinical_notes_required": true,
+      "specific_forms": ["BCBS_PA_FORM_2026"]
+    }
+  }
+  ```
+- [ ] Implement AI-powered medical necessity letter generation:
+  - Claude generates peer-to-peer review summary
+  - Include clinical evidence supporting medical necessity
+  - Reference applicable guidelines (InterQual, MCG)
+  - Provider reviews and signs
+- [ ] Create submission workflow:
+  1. System identifies auth requirement (from eligibility check T1)
+  2. AI assembles clinical documentation
+  3. AI generates medical necessity letter
+  4. Staff reviews assembled package
+  5. Submit to payer (fax or electronic portal)
+  6. Track in dashboard (T2)
+- [ ] Implement fax integration (for payers without electronic submission):
+  - Generate PDF from prior auth form
+  - Send via fax API (SRFax, Phaxio, or similar)
+  - Receive confirmation and store
+- [ ] Track automation metrics:
+  - Time saved per prior auth (vs. manual)
+  - Auto-approval rate for AI-assembled submissions
+  - Denial rate comparison (AI vs. manual submissions)
+
+**Acceptance Criteria:**
+- [ ] AI assembles prior auth package in < 5 minutes (vs. 30+ minutes manual)
+- [ ] Medical necessity letter reads professionally and includes relevant clinical evidence
+- [ ] Payer-specific requirements met for top 5 payers
+- [ ] Staff can review and override AI-assembled documentation
+- [ ] Submission tracking integrates with dashboard (T2)
+- [ ] Fax submission confirmed and tracked
+
+---
+
+### T4: AI Coding Engine v1
+**Complexity:** M
+**Estimate:** 2 days
+**Dependencies:** [[EPIC-004-ai-clinical-documentation]] T6 (coding suggestions)
 **References:** [[Revenue-Cycle-Deep-Dive]], [[ADR-003-ai-agent-framework]]
 
 **Description:**
-Extend the AI coding suggestions from [[EPIC-004-ai-clinical-documentation]] into a full coding engine that validates code combinations, checks medical necessity, and generates charge entries ready for claims submission.
+Extend the AI coding suggestions from EPIC-004 into a full coding engine that produces billing-ready code sets with compliance checks. This is the bridge between clinical documentation and claims.
 
 **Subtasks:**
-- [ ] Build code validation layer:
-  - ICD-10-CM code validity check (active codes, correct format)
-  - CPT code validity and modifier requirements
-  - ICD-10 / CPT compatibility (diagnosis supports procedure medical necessity)
-  - NCCI edits check (National Correct Coding Initiative bundling rules)
-  - Gender and age-specific code restrictions
-- [ ] Implement E/M level calculator:
-  - 2021 E/M guidelines (time-based and MDM-based)
-  - Documentation element scoring (HPI, ROS, PFSH, exam)
-  - Medical Decision Making (MDM) complexity assessment
-  - Time-based coding with time documentation
-- [ ] Build charge entry generation:
-  - Map approved ICD-10 + CPT codes to charge items
-  - Apply fee schedule (configurable per payer contract)
-  - Calculate expected reimbursement
-  - Link charges to Encounter and Practitioner
-- [ ] Implement coding compliance alerts:
-  - Upcoding risk detection (E/M level vs documentation support)
-  - Unbundling detection (separate billing for bundled services)
-  - Frequency limits (e.g., annual wellness visit once per year)
-- [ ] Store charges as FHIR ChargeItem resources
+- [ ] Implement coding review workflow:
+  ```
+  AI suggests codes (EPIC-004 T6)
+  -> Coder reviews suggestions
+  -> Coder accepts/modifies/adds codes
+  -> System validates code set
+  -> Approved codes feed charge capture (T5)
+  ```
+- [ ] Implement code set validation:
+  - ICD-10 code combination rules (excludes1, excludes2)
+  - CPT code bundling rules (CCI edits)
+  - Modifier requirements and restrictions
+  - Gender-specific code validation
+  - Age-specific code validation
+  - Diagnosis-procedure linkage validation
+- [ ] Implement HCC/RAF score calculation:
+  - Calculate RAF score from approved diagnosis codes
+  - Identify HCC opportunities (conditions documented but not coded)
+  - Flag "HCC recapture" opportunities for annual wellness visits
+- [ ] Implement coding queue:
+  - Encounters awaiting coding review
+  - Priority sorting: oldest first, high-value encounters
+  - Coder assignment and workload balancing
+  - Productivity metrics: codes reviewed per hour, accuracy rate
+- [ ] Implement coding audit trail:
+  - Original AI suggestions
+  - Coder modifications (with reason)
+  - Final approved code set
+  - Timestamp and user for each action
 
 **Acceptance Criteria:**
-- [ ] Code validation catches > 95% of coding errors before claim submission
-- [ ] E/M level calculator matches manual coder determination > 85% of time
-- [ ] NCCI edit checks prevent bundling violations
-- [ ] Compliance alerts flag potential upcoding with clinical justification
-- [ ] Charges auto-generated from AI coding suggestions for > 80% of encounters
+- [ ] Coding validation catches 99%+ of CCI edit violations
+- [ ] HCC opportunities identified for documented conditions
+- [ ] Coder can review and approve AI suggestions in < 1 minute per encounter
+- [ ] Complete audit trail from AI suggestion to approved code
+- [ ] Coding queue shows outstanding encounters with priority
 
 ---
 
-### T4: Charge Capture Workflow
+### T5: Charge Capture Workflow
 **Complexity:** M
 **Estimate:** 2 days
-**Dependencies:** T3, [[EPIC-004-ai-clinical-documentation]] T5 (provider review UI)
+**Dependencies:** T4, [[EPIC-003-fhir-data-layer]] T4 (FHIR CRUD)
 **References:** [[Revenue-Cycle-Deep-Dive]]
 
 **Description:**
-Build the charge capture workflow that collects, reviews, and finalizes charges from clinical encounters before claims generation.
+Implement the charge capture workflow that takes approved clinical codes and creates billable charges. This ensures every rendered service is captured for billing.
 
 **Subtasks:**
-- [ ] Implement auto charge capture from approved clinical notes:
-  - When provider signs note (EPIC-004 T5), auto-generate charges
-  - Include all diagnosis codes, procedure codes, and modifiers
-  - Apply provider-specific fee schedules
+- [ ] Design charge data model:
+  ```sql
+  CREATE TABLE charges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    encounter_id UUID NOT NULL,
+    patient_id UUID NOT NULL,
+    provider_id UUID NOT NULL,
+    service_date DATE NOT NULL,
+    cpt_code VARCHAR(10) NOT NULL,
+    modifiers VARCHAR(10)[],
+    icd10_codes VARCHAR(10)[] NOT NULL,
+    units INTEGER NOT NULL DEFAULT 1,
+    charge_amount DECIMAL(10,2) NOT NULL,
+    allowed_amount DECIMAL(10,2),
+    status VARCHAR(20) NOT NULL,
+    fee_schedule_id UUID,
+    claim_id UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  ```
+- [ ] Implement fee schedule management:
+  - Practice-specific fee schedules (UCR - usual/customary/reasonable)
+  - Medicare fee schedule import (CMS MPFS)
+  - Payer-specific contracted rates (by payer contract)
+  - Fee schedule lookup by CPT + location + provider
+- [ ] Implement auto-charge generation:
+  - On encounter coding approval (T4), automatically create charges
+  - Apply fee schedule to determine charge amounts
+  - Link ICD-10 diagnoses to CPT procedures (pointer)
+  - Flag missing charges (E/M without linked diagnoses)
 - [ ] Build charge review interface:
-  - List pending charges by date of service
-  - Show AI-suggested codes with confidence indicators
-  - Allow add/edit/remove of charge line items
-  - Batch approval for high-confidence charges
+  - Daily charge review for billing staff
+  - Charges grouped by provider, date, status
+  - Bulk actions: approve, hold, void
+  - Missing charge alerts
 - [ ] Implement charge hold rules:
-  - Hold charges missing required fields (diagnosis, modifier, etc.)
-  - Hold charges flagged by compliance alerts
-  - Hold charges for encounters missing provider signature
-- [ ] Build charge submission workflow:
-  - Individual charge finalization
-  - Batch charge finalization (end-of-day charge review)
-  - Charge status tracking: Pending -> Reviewed -> Finalized -> Billed
+  - Hold if missing prior authorization
+  - Hold if eligibility not verified
+  - Hold if diagnosis-procedure linkage invalid
+  - Release hold when conditions met
+- [ ] Map charges to FHIR Claim resource (for claims generation T6)
 
 **Acceptance Criteria:**
-- [ ] Auto-generated charges appear within 1 minute of note signing
-- [ ] Charge review interface loads < 2 seconds with day's charges
-- [ ] Hold rules prevent incomplete charges from proceeding to claims
-- [ ] Batch approval workflow processes day's charges in < 5 minutes
+- [ ] Charges auto-generated from coded encounters
+- [ ] Fee schedule lookup returns correct charge amount
+- [ ] Hold rules prevent premature billing
+- [ ] Billing staff can review and approve charges efficiently
+- [ ] Every charge traceable to encounter and coding decision
+- [ ] FHIR Claim resource generated from approved charges
 
 ---
 
-### T5: Claims Generation (X12 837P)
-**Complexity:** L
-**Estimate:** 4 days
-**Dependencies:** T3, T4
-**References:** [[X12-EDI-Deep-Dive]], [[Revenue-Cycle-Deep-Dive]]
-
-**Description:**
-Generate HIPAA-compliant X12 837P (Professional) claim transactions from finalized charges. Claims must conform to the X12 5010 standard and pass clearinghouse validation.
-
-**Subtasks:**
-- [ ] Build X12 837P claim generator:
-  - ISA/GS envelope segments (interchange/functional group headers)
-  - ST/SE transaction set headers
-  - Loop 2000A (Billing Provider)
-  - Loop 2000B (Subscriber/Patient)
-  - Loop 2300 (Claim Information) -- diagnosis codes, dates, amounts
-  - Loop 2400 (Service Lines) -- CPT codes, modifiers, charges, units
-- [ ] Implement claim data assembly from FHIR resources:
-  - Patient demographics -> subscriber information
-  - Coverage -> payer information, subscriber ID
-  - Encounter -> dates of service
-  - ChargeItem -> service lines
-  - Practitioner -> rendering/billing provider NPI
-  - Organization -> billing entity
-- [ ] Create FHIR Claim resource from assembled data
-- [ ] Implement claim validation before submission:
-  - Required fields present (NPI, tax ID, diagnosis codes)
-  - Code format validation (ICD-10, CPT, modifier format)
-  - Date range validation (service date within coverage period)
-  - Duplicate claim detection (same patient, same date, same codes)
-- [ ] Integrate with clearinghouse submission API
-- [ ] Handle claim acknowledgments:
-  - X12 999 (Functional Acknowledgment) -- syntax validation
-  - X12 277 (Claim Status) -- payer acceptance/rejection
-
-**Acceptance Criteria:**
-- [ ] Generated 837P passes clearinghouse syntax validation > 99% of time
-- [ ] All required X12 segments and loops populated correctly
-- [ ] FHIR Claim resource created and linked to Encounter/ChargeItem
-- [ ] Duplicate claim detection prevents resubmission
-- [ ] Claim submission status tracked through acknowledgment processing
-
----
-
-### T6: Claims Scrubbing Engine
-**Complexity:** M
-**Estimate:** 2 days
-**Dependencies:** T5
-**References:** [[Revenue-Cycle-Deep-Dive]], [[X12-EDI-Deep-Dive]]
-
-**Description:**
-Pre-submission claims scrubbing to catch errors before clearinghouse submission, maximizing the clean claim rate.
-
-**Subtasks:**
-- [ ] Implement scrubbing rules engine:
-  - Payer-specific requirements (Medicare vs commercial vs Medicaid)
-  - Missing/invalid data detection (NPI, tax ID, member ID format)
-  - Code-level validation (deleted codes, gender/age restrictions)
-  - Modifier requirements (certain CPT codes require specific modifiers)
-  - Place of service validation
-  - Timely filing deadline check (claim must be filed within payer deadline)
-- [ ] Build scrubbing results interface:
-  - Error list with severity (fatal, warning, info)
-  - One-click fix for common issues (e.g., missing modifier)
-  - Skip to claim line with error highlighted
-- [ ] Implement auto-fix for common issues:
-  - Add required modifiers automatically
-  - Correct common code format errors
-  - Suggest replacement for deleted/retired codes
-- [ ] Track scrubbing metrics:
-  - Error rate by type
-  - Most common errors by provider
-  - Clean claim rate trend
-
-**Acceptance Criteria:**
-- [ ] Scrubbing catches > 98% of errors that would cause clearinghouse rejection
-- [ ] Auto-fix resolves > 50% of scrubbing errors without manual intervention
-- [ ] Scrubbing completes in < 5 seconds per claim
-- [ ] Clean claim rate > 95% after scrubbing
-
----
-
-### T7: Clearinghouse Integration
-**Complexity:** M
-**Estimate:** 2 days
-**Dependencies:** T5, T6
-**References:** [[X12-EDI-Deep-Dive]]
-
-**Description:**
-Build the integration layer with one or more clearinghouses for claim submission and response processing.
-
-**Subtasks:**
-- [ ] Implement clearinghouse API integration (primary: Availity or Change Healthcare)
-- [ ] Build claim submission queue:
-  - Batch submission (configurable: real-time or scheduled)
-  - Retry logic for failed submissions with exponential backoff
-  - Submission tracking (submitted timestamp, confirmation number)
-- [ ] Implement response processing:
-  - X12 999 -- Functional Acknowledgment (syntax OK/error)
-  - X12 277 -- Claim Status Response (accepted/rejected/pending)
-  - X12 835 -- Remittance Advice (payment details, handled in T8)
-- [ ] Build clearinghouse dashboard:
-  - Submission queue status
-  - Acceptance/rejection rates
-  - Pending claims by age
-- [ ] Implement secondary clearinghouse failover
-
-**Acceptance Criteria:**
-- [ ] Claims submitted to clearinghouse within 24 hours of finalization
-- [ ] Acknowledgment responses processed within 1 hour of receipt
-- [ ] Retry logic handles transient failures without data loss
-- [ ] Dashboard shows real-time submission status
-
----
-
-### T8: Remittance Processing (X12 835)
+### T6: Claims Generation (X12 837P)
 **Complexity:** L
 **Estimate:** 3 days
-**Dependencies:** T7
+**Dependencies:** T5, T1
 **References:** [[X12-EDI-Deep-Dive]], [[Revenue-Cycle-Deep-Dive]]
 
 **Description:**
-Parse X12 835 Electronic Remittance Advice (ERA) files to post payments, adjustments, and denials automatically.
+Generate X12 837P (Professional) claims from approved charges. Claims must be compliant with HIPAA-mandated X12 5010 format.
 
 **Subtasks:**
-- [ ] Build X12 835 parser:
-  - CLP (Claim Payment) segment -- claim-level payment info
-  - SVC (Service Payment) segment -- line-level payment info
-  - CAS (Claim Adjustment) segment -- adjustment reason codes
-  - PLB (Provider Level Balance) segment -- provider-level adjustments
-- [ ] Implement payment posting:
-  - Match 835 payments to submitted claims
-  - Post payment amounts at claim and line level
-  - Post contractual adjustments
-  - Post patient responsibility (copay, deductible, coinsurance)
-  - Handle partial payments and split payments
-- [ ] Create FHIR ExplanationOfBenefit resource from 835 data
-- [ ] Build payment posting review interface:
-  - Auto-posted payments (high confidence matching)
-  - Manual review queue (ambiguous matching)
-  - Payment summary by date, payer, provider
-- [ ] Implement patient statement generation:
-  - Calculate patient balance after insurance payment
-  - Generate patient-friendly statement
-  - Track patient payment status
+- [ ] Implement X12 837P generator:
+  - ISA/GS/ST envelope generation
+  - 2000A Billing Provider (practice NPI, tax ID)
+  - 2000B Subscriber (insurance subscriber demographics)
+  - 2010BA Subscriber Name
+  - 2010BB Payer Name
+  - 2300 Claim Information:
+    - Place of service code
+    - Diagnosis codes (up to 12 ICD-10)
+    - Total charge amount
+    - Prior authorization number (if applicable)
+    - Referring provider (if applicable)
+  - 2400 Service Line:
+    - CPT/HCPCS code + modifiers
+    - Service date
+    - Charge amount
+    - Units
+    - Diagnosis pointers
+    - Rendering provider NPI
+  - SE/GE/IEA trailer segments
+- [ ] Implement claim generation from FHIR:
+  - Read FHIR Claim resource (from T5)
+  - Read FHIR Patient, Coverage, Organization, Practitioner
+  - Map FHIR data to X12 segments
+  - Store generated 837P as FHIR ClaimResponse
+- [ ] Implement claim ID generation and tracking:
+  - Internal claim ID (UUID)
+  - Payer claim number (assigned on submission)
+  - Patient control number
+  - Claim status tracking: generated, scrubbed, submitted, accepted, rejected, paid, denied
+- [ ] Handle claim types:
+  - Original claim
+  - Corrected claim (frequency code 7)
+  - Void/cancel (frequency code 8)
+  - Replacement claim
+- [ ] Implement secondary/tertiary claim generation:
+  - After primary payer payment, generate secondary claim
+  - Include primary payer payment information (COB)
+  - Patient responsibility calculation
+- [ ] Validate 837P against X12 5010 specification
+- [ ] Store raw 837P files for audit (7-year retention)
 
 **Acceptance Criteria:**
-- [ ] 835 parser handles all major payer ERA formats
-- [ ] Auto-posting rate > 90% (matched without manual intervention)
-- [ ] Payment amounts reconcile with bank deposits
-- [ ] FHIR ExplanationOfBenefit resources created for all processed remittances
-- [ ] Patient statements generated within 48 hours of ERA processing
+- [ ] Generated 837P passes X12 syntax validation
+- [ ] Claims include all required segments for top 5 payers
+- [ ] Secondary claims include correct COB information
+- [ ] Claim IDs tracked across internal and payer systems
+- [ ] Raw X12 files stored with audit trail
+- [ ] Corrected and void claims generate correctly
 
 ---
 
-### T9: Denial Tracking and Management
+### T7: Claims Scrubbing Rules Engine
+**Complexity:** M
+**Estimate:** 2 days
+**Dependencies:** T6
+**References:** [[Revenue-Cycle-Deep-Dive]]
+
+**Description:**
+Build a rules engine that scrubs claims before submission, catching errors that would cause denials. Claims that fail scrubbing are returned for correction.
+
+**Subtasks:**
+- [ ] Implement scrubbing rule categories:
+  - **Patient demographics**: valid name, DOB, gender, subscriber ID
+  - **Provider information**: valid NPI, taxonomy code, tax ID
+  - **Payer information**: valid payer ID, plan type
+  - **Coding rules**:
+    - CCI edits (bundling conflicts)
+    - MUE limits (maximum units per service)
+    - Gender-specific code validation
+    - Age-specific code validation
+    - Diagnosis-procedure linkage
+    - LCD/NCD coverage requirements
+  - **Claim-level rules**:
+    - Duplicate claim detection (same patient, date, CPT)
+    - Timely filing check (within payer's filing limit)
+    - Prior authorization verification
+    - Referral requirement verification
+    - Place of service consistency
+- [ ] Implement rule engine architecture:
+  ```
+  Claim -> [Rule 1] -> [Rule 2] -> ... -> [Rule N] -> Clean / Errors
+
+  Each rule returns:
+  - PASS: rule satisfied
+  - WARN: potential issue (submit with flag)
+  - FAIL: claim must be corrected before submission
+  ```
+- [ ] Create rule management interface:
+  - View all active rules with pass/fail rates
+  - Enable/disable rules per payer
+  - Custom rule creation (for practice-specific requirements)
+  - Rule testing with sample claims
+- [ ] Implement scrubbing reports:
+  - Daily scrubbing summary: claims processed, clean rate, common errors
+  - Error trend analysis (identify systematic issues)
+  - Denial prevention estimate (dollars saved by catching errors)
+- [ ] Integrate scrubbing into claims workflow:
+  ```
+  Charge approved -> Claim generated (T6)
+  -> Auto-scrub -> Clean: route to submission
+                -> Errors: route to correction queue
+  ```
+
+**Acceptance Criteria:**
+- [ ] Scrubbing catches 95%+ of preventable denial causes
+- [ ] Clean claim rate > 90% after scrubbing (vs. industry avg 80%)
+- [ ] Scrubbing completes in < 2 seconds per claim
+- [ ] Error messages are specific and actionable
+- [ ] Rule management allows adding custom rules
+- [ ] Scrubbing report shows daily trends
+
+---
+
+### T8: Clearinghouse Integration
+**Complexity:** L
+**Estimate:** 3 days
+**Dependencies:** T6, T7
+**References:** [[X12-EDI-Deep-Dive]], [[Revenue-Cycle-Deep-Dive]]
+
+**Description:**
+Integrate with an electronic clearinghouse (Change Healthcare/Optum or Availity) for claims submission and status tracking. The clearinghouse acts as the intermediary between MedOS and payers.
+
+**Subtasks:**
+- [ ] Evaluate and select clearinghouse:
+  | Criteria | Change Healthcare | Availity | Trizetto |
+  |----------|------------------|----------|----------|
+  | Payer coverage | ? | ? | ? |
+  | API quality | ? | ? | ? |
+  | Pricing | ? | ? | ? |
+  | BAA available | ? | ? | ? |
+  | ERA/835 support | ? | ? | ? |
+  | Real-time status | ? | ? | ? |
+- [ ] Implement SFTP/API submission:
+  - Configure SFTP connection to clearinghouse
+  - Batch submission: upload 837P files on schedule (hourly)
+  - Real-time submission: API call per claim (for urgent claims)
+  - Implement acknowledgment (999/TA1) processing
+  - Handle rejections at clearinghouse level (before payer)
+- [ ] Implement claim status inquiry (X12 276/277):
+  - `POST /api/v1/claims/{id}/status` - check claim status
+  - Batch status check: all pending claims daily
+  - Parse 277 response: accepted, rejected, pending, finalized
+  - Update claim status in database
+- [ ] Implement enrollment management:
+  - Practice enrollment with each payer via clearinghouse
+  - Provider enrollment verification
+  - ERA (Electronic Remittance Advice) enrollment
+  - EFT (Electronic Funds Transfer) enrollment
+- [ ] Implement error handling and retry:
+  - Clearinghouse rejection: parse error, route to correction queue
+  - Network failure: retry with exponential backoff
+  - Duplicate submission prevention (idempotency keys)
+  - Dead letter queue for unresolvable submissions
+- [ ] Security and compliance:
+  - SFTP with key-based authentication
+  - All X12 files encrypted at rest
+  - BAA signed with clearinghouse
+  - Transaction logging for HIPAA audit
+
+**Acceptance Criteria:**
+- [ ] Claims submitted successfully to clearinghouse
+- [ ] Acknowledgments (999) processed and claim status updated
+- [ ] Claim status inquiry returns current status from payer
+- [ ] Clearinghouse rejections routed to correction queue with error details
+- [ ] BAA signed and compliance documented
+- [ ] Submission latency < 30 seconds for real-time, hourly for batch
+
+---
+
+### T9: Remittance Processing (X12 835)
 **Complexity:** M
 **Estimate:** 2 days
 **Dependencies:** T8
-**References:** [[Revenue-Cycle-Deep-Dive]]
+**References:** [[X12-EDI-Deep-Dive]], [[Revenue-Cycle-Deep-Dive]]
 
 **Description:**
-Track claim denials, categorize by reason, and manage the appeal workflow.
+Process electronic remittance advice (ERA/835) from payers to record payments, adjustments, and denials against claims.
 
 **Subtasks:**
-- [ ] Build denial detection from 835 remittance:
-  - Parse CAS adjustment reason codes (CARC) and remark codes (RARC)
-  - Categorize denials: eligibility, authorization, coding, medical necessity, timely filing
-  - Link denied claims to original submission
-- [ ] Implement denial workflow:
-  - Auto-create denial work items from 835 processing
-  - Assign to billing staff based on denial category
-  - Track status: Identified -> Under Review -> Appeal Submitted -> Resolved
-  - Appeal deadline tracking with escalation alerts
-- [ ] Build denial analytics dashboard:
-  - Denial rate by payer, provider, denial reason
-  - Top denial reasons with trend analysis
-  - Average days to resolve by category
-  - Financial impact (denied dollars, recovered dollars)
-- [ ] Implement denial appeal document generation:
-  - Pull supporting clinical documentation from FHIR resources
-  - Generate appeal letter template
-  - Attach relevant records (notes, labs, auth numbers)
+- [ ] Implement X12 835 parser:
+  - Parse payment/remittance segments:
+    - BPR (Financial Information) - payment amount, method, date
+    - TRN (Trace Number) - check/EFT number
+    - 2100 Claim Payment Information:
+      - CLP (Claim Level) - claim status, charge, payment, patient responsibility
+      - CAS (Adjustment) - adjustment reason codes, amounts
+      - SVC (Service Level) - line-item payment details
+      - AMT (Amounts) - allowed amount, deductible, copay, coinsurance
+  - Handle multiple claims per remittance
+  - Handle multiple remittances per file
+- [ ] Implement payment posting:
+  - Match 835 claim payments to internal claims (by patient control number)
+  - Post payment amounts to charges
+  - Record adjustments with reason codes:
+    - Contractual adjustment (CO)
+    - Patient responsibility (PR)
+    - Other adjustment (OA)
+    - Payer initiated reduction (PI)
+  - Calculate patient balance
+  - Trigger secondary claim generation if applicable
+- [ ] Handle payment exceptions:
+  - Unmatched payments (835 payment without matching claim)
+  - Overpayments
+  - Recoupments/takebacks
+  - Zero-pay remittances
+- [ ] Create payment posting dashboard:
+  - Daily remittance summary
+  - Unposted payments requiring manual matching
+  - Payment variance alerts (expected vs. actual)
+  - Collections summary by payer
+- [ ] Store payment data as FHIR ClaimResponse / PaymentReconciliation resources
+- [ ] Implement bank reconciliation support:
+  - Match 835 totals to bank deposits
+  - Flag discrepancies
 
 **Acceptance Criteria:**
-- [ ] All denials from 835 automatically tracked
-- [ ] Denial categorization accuracy > 95%
-- [ ] Appeal deadline alerts prevent missed filing windows
-- [ ] Analytics dashboard shows denial trends with actionable insights
+- [ ] 835 parser handles all standard adjustment reason codes
+- [ ] Auto-matching rate > 95% (payment to claim)
+- [ ] Patient responsibility calculated correctly
+- [ ] Secondary claims triggered automatically when applicable
+- [ ] Unmatched payments flagged for manual review
+- [ ] Payment posting completes same day as remittance receipt
 
 ---
 
-### T10: AI Denial Prediction
-**Complexity:** M
-**Estimate:** 2 days
-**Dependencies:** T9, T3
-**References:** [[ADR-003-ai-agent-framework]], [[Revenue-Cycle-Deep-Dive]]
+### T10: Denial Tracking and AI Denial Prediction
+**Complexity:** L
+**Estimate:** 3 days
+**Dependencies:** T9, [[EPIC-004-ai-clinical-documentation]] T6 (coding engine)
+**References:** [[Revenue-Cycle-Deep-Dive]], [[ADR-003-ai-agent-framework]]
 
 **Description:**
-Use historical denial data and claim characteristics to predict denial risk before submission, allowing proactive correction.
+Track claim denials, analyze patterns, and build an AI model that predicts denial risk before claims are submitted, enabling pre-emptive correction.
 
 **Subtasks:**
-- [ ] Build denial prediction model:
-  - Features: payer, CPT code, ICD-10 code, E/M level, provider, prior denials
-  - Training data: historical claims and their outcomes
-  - Prediction: probability of denial + predicted denial reason
-- [ ] Integrate prediction into claims scrubbing workflow (T6):
-  - Flag high-risk claims before submission
-  - Suggest corrective actions based on predicted denial reason
-  - Display risk score in claim review interface
-- [ ] Implement feedback loop:
-  - Track prediction accuracy against actual outcomes
-  - Retrain model monthly with new denial data
-- [ ] Build denial prevention alerts:
-  - Real-time alerts during charge capture for high-risk code combinations
-  - Provider education suggestions for repeat denial patterns
+- [ ] Implement denial tracking system:
+  ```sql
+  CREATE TABLE denials (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    claim_id UUID NOT NULL,
+    denial_date DATE NOT NULL,
+    denial_code VARCHAR(20) NOT NULL,
+    denial_reason TEXT NOT NULL,
+    remark_code VARCHAR(20),
+    denied_amount DECIMAL(10,2) NOT NULL,
+    service_line_id UUID,
+    category VARCHAR(30),
+    status VARCHAR(20) NOT NULL,
+    appeal_deadline DATE,
+    assigned_to UUID,
+    resolution_date DATE,
+    resolution_amount DECIMAL(10,2),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  ```
+- [ ] Implement denial categorization:
+  - Map CARC/RARC codes to categories:
+    - Clinical: medical necessity, experimental, not covered
+    - Administrative: timely filing, missing info, duplicate
+    - Coding: invalid code, unbundling, upcoding
+    - Eligibility: inactive, not covered, out of network
+    - Authorization: no prior auth, expired auth
+  - Auto-categorize based on denial codes
+- [ ] Build denial management dashboard:
+  - Denial volume by category, payer, provider, time period
+  - Aging report: days since denial, approaching appeal deadline
+  - Denial rate trends (improving or worsening?)
+  - Top denial reasons with actionable recommendations
+  - Dollar value at risk (denials approaching write-off)
+- [ ] Implement appeal workflow:
+  - Auto-generate appeal letter template based on denial reason
+  - Attach supporting clinical documentation
+  - Track appeal submission and outcome
+  - Calculate appeal success rate by category and payer
+- [ ] Build AI denial prediction model v1:
+  - Features:
+    - Payer ID
+    - CPT code(s)
+    - ICD-10 code(s)
+    - Charge amount
+    - Prior auth status
+    - Provider NPI
+    - Historical denial rate for this code + payer combination
+    - Documentation completeness score (from EPIC-004 T8)
+  - Model: gradient boosted trees (XGBoost) or logistic regression
+  - Training data: historical claims with outcomes
+  - Output: denial probability (0-1) + predicted denial reason
+  - Threshold: flag claims with > 30% denial probability
+- [ ] Integrate prediction into claims workflow:
+  ```
+  Claim generated -> Scrubbed (T7) -> AI prediction
+  -> Low risk: submit normally
+  -> High risk: flag for review, show predicted denial reason + recommended fix
+  ```
 
 **Acceptance Criteria:**
-- [ ] Denial prediction accuracy > 75% on test set
-- [ ] High-risk claims flagged before submission
-- [ ] Corrective action suggestions reduce actual denial rate by > 20%
-- [ ] Model retraining pipeline operational
+- [ ] All denials categorized automatically from CARC/RARC codes
+- [ ] Denial dashboard shows trends and actionable insights
+- [ ] Appeal workflow tracks submission through resolution
+- [ ] AI prediction model identifies 70%+ of eventual denials before submission
+- [ ] Flagged claims show specific recommended corrections
+- [ ] Denial rate demonstrably decreases over 30-day measurement period
 
 ---
 
 ### T11: Revenue Analytics Dashboard
 **Complexity:** M
 **Estimate:** 2 days
-**Dependencies:** T8, T9
-**References:** [[Revenue-Cycle-Deep-Dive]], [[System-Architecture-Overview]]
+**Dependencies:** T5, T9, T10
+**References:** [[Revenue-Cycle-Deep-Dive]]
 
 **Description:**
-Build a practice administrator dashboard showing key revenue cycle metrics, trends, and actionable insights.
+Build a comprehensive revenue analytics dashboard for practice managers and billing staff to monitor financial health and identify optimization opportunities.
 
 **Subtasks:**
-- [ ] Implement core revenue metrics:
-  - Total charges, payments, adjustments by period
-  - Days in A/R (aging buckets: 0-30, 31-60, 61-90, 90+)
-  - Clean claim rate and trend
-  - Denial rate and trend
-  - Collection rate (payments / charges)
-  - Net collection rate (payments / allowed amounts)
-- [ ] Build visualization components:
-  - Revenue trend chart (monthly, by payer)
-  - A/R aging waterfall chart
-  - Denial rate by category (pie/bar chart)
-  - Provider productivity (charges per provider per day)
+- [ ] Implement key revenue metrics:
+  | Metric | Description | Target |
+  |---|---|---|
+  | Days in AR | Average days from service to payment | < 35 |
+  | Clean claim rate | % claims passing scrubbing first time | > 95% |
+  | First pass resolution rate | % claims paid on first submission | > 90% |
+  | Denial rate | % claims denied (partial or full) | < 5% |
+  | Collection rate | Collected / Allowed amount | > 96% |
+  | Cost to collect | Billing cost / Collections | < 4% |
+  | Net collection rate | (Payments + adjustments) / (Charges - contractual) | > 98% |
+- [ ] Build dashboard views:
+  - **Executive summary**: headline metrics with trend indicators
+  - **Revenue waterfall**: charges -> allowed -> payments -> adjustments -> denials -> AR
+  - **Payer performance**: metrics broken down by insurance payer
+  - **Provider performance**: charges and collections by provider
+  - **Aging buckets**: AR aging (0-30, 31-60, 61-90, 91-120, 120+ days)
+  - **Denial analysis**: denial rates by category with drill-down
+  - **Projection**: 30/60/90 day revenue forecast based on pipeline
+- [ ] Implement date range filtering:
+  - Daily, weekly, monthly, quarterly, yearly views
+  - Custom date range
+  - Comparison periods (this month vs. last month, YoY)
 - [ ] Implement drill-down capability:
-  - Click metric to see underlying claims
-  - Filter by date range, payer, provider, location
-  - Export to CSV for external analysis
-- [ ] Build automated reporting:
-  - Weekly revenue summary email to administrators
-  - Monthly financial report generation
-  - Custom report builder (stretch)
+  - Click metric -> see contributing claims
+  - Click payer -> see payer-specific detail
+  - Click provider -> see provider-specific detail
+- [ ] Implement automated reporting:
+  - Weekly email summary to practice manager
+  - Monthly financial report (PDF export)
+  - Alert on metric threshold breach (denial rate > 10%)
+- [ ] Data visualization with charts:
+  - Line charts for trends over time
+  - Bar charts for comparisons
+  - Pie charts for category breakdowns
+  - Sankey diagram for revenue flow
 
 **Acceptance Criteria:**
-- [ ] Dashboard loads < 3 seconds with 6 months of data
-- [ ] All core metrics calculated correctly against source data
-- [ ] Drill-down from metrics to individual claims functional
+- [ ] All key metrics calculated correctly and in real-time
+- [ ] Dashboard loads in < 3 seconds
+- [ ] Drill-down from metric to individual claims works
+- [ ] Date range filtering provides accurate comparative data
 - [ ] Weekly automated reports delivered on schedule
+- [ ] PDF export generates clean, printable report
+
+---
+
+### T12: Integration Testing
+**Complexity:** M
+**Estimate:** 2 days
+**Dependencies:** T1-T11
+**References:** [[Revenue-Cycle-Deep-Dive]]
+
+**Description:**
+End-to-end integration testing of the complete revenue cycle from encounter documentation to payment posting.
+
+**Subtasks:**
+- [ ] Create test scenario: full revenue cycle walkthrough:
+  1. Patient checks in -> eligibility verified (T1)
+  2. Provider conducts encounter -> AI documentation (EPIC-004)
+  3. AI suggests codes -> coder reviews and approves (T4)
+  4. Charges captured automatically (T5)
+  5. Claim generated and scrubbed (T6, T7)
+  6. Claim submitted to clearinghouse (T8)
+  7. Remittance received and posted (T9)
+  8. Patient statement generated
+  9. Analytics reflect completed cycle (T11)
+- [ ] Test with synthetic data for each major payer
+- [ ] Test denial scenarios:
+  - Missing prior authorization
+  - Inactive coverage
+  - Coding error
+  - Duplicate claim
+  - Timely filing violation
+- [ ] Test secondary billing flow
+- [ ] Load test: 500 claims/day throughput
+- [ ] Verify HIPAA audit trail covers entire cycle
+- [ ] Verify all X12 transactions stored for compliance
+
+**Acceptance Criteria:**
+- [ ] Full cycle completes without manual intervention for clean claims
+- [ ] Denial scenarios handled gracefully with clear user guidance
+- [ ] 500 claims/day throughput achieved without performance degradation
+- [ ] Audit trail complete from encounter to payment
+- [ ] All X12 files retrievable for 7-year retention compliance
 
 ---
 
 ## Dependencies Map
 
 ```
-T1 (Eligibility) ──> T2 (Prior Auth)
-                                        T3 (AI Coding) ──> T4 (Charge Capture) ──> T5 (Claims 837P)
-                                                                                        │
-                                                           T5 ──> T6 (Scrubbing) ──> T7 (Clearinghouse)
-                                                                                        │
-                                                           T7 ──> T8 (Remittance 835) ──> T9 (Denials)
-                                                                                           │
-                                                           T9 ──> T10 (AI Denial Prediction)
-                                                           T8 + T9 ──> T11 (Analytics Dashboard)
+T1 (Eligibility) ──> T2 (PA Tracking) ──> T3 (PA Automation)
+                └──> T5 (Charge Capture) ──> T6 (Claims 837P) ──> T7 (Scrubbing)
+T4 (Coding) ──────┘                                            └──> T8 (Clearinghouse)
+                                                                      └──> T9 (Remittance)
+                                                                            └──> T10 (Denials)
+                                                              T5 + T9 + T10 ──> T11 (Analytics)
+                                                              T1-T11 ──> T12 (Integration Test)
 ```
 
 ---
 
 ## Cross-Epic Dependencies
 
-| This Epic Requires | Provided By |
-|---|---|
-| FHIR CRUD API (Claim, Coverage, EOB) | [[EPIC-003-fhir-data-layer]] T4 |
-| FHIR search (find claims, encounters) | [[EPIC-003-fhir-data-layer]] T5 |
-| AI coding suggestions (ICD-10 + CPT) | [[EPIC-004-ai-clinical-documentation]] T6 |
-| Provider-signed clinical notes | [[EPIC-004-ai-clinical-documentation]] T5 |
-| Encounter data (dates, providers) | [[EPIC-003-fhir-data-layer]] T4 |
-| Patient demographics | [[EPIC-003-fhir-data-layer]] T4 |
-| JWT authentication and RBAC | [[EPIC-002-auth-identity-system]] T2, T9 |
-
 | This Epic Provides | Required By |
 |---|---|
-| Billing functionality for pilot | [[EPIC-006-pilot-readiness]] (working billing is launch requirement) |
-| Revenue analytics | [[EPIC-006-pilot-readiness]] (Go/No-Go criteria) |
-| Claims submission pipeline | [[EPIC-006-pilot-readiness]] (end-to-end workflow demo) |
+| Revenue analytics (T11) | [[EPIC-006-pilot-readiness]] (success metrics) |
+| Denial tracking (T10) | [[EPIC-006-pilot-readiness]] (pilot KPIs) |
+| Full billing pipeline (T1-T9) | [[EPIC-006-pilot-readiness]] (pilot operational readiness) |
+| Eligibility verification (T1) | [[EPIC-006-pilot-readiness]] (front desk workflow) |
+
+| This Epic Requires | Provided By |
+|---|---|
+| AI coding suggestions | [[EPIC-004-ai-clinical-documentation]] T6 |
+| FHIR resources from notes | [[EPIC-004-ai-clinical-documentation]] T7 |
+| FHIR CRUD + search | [[EPIC-003-fhir-data-layer]] T4, T5 |
+| Auth + API keys | [[EPIC-002-auth-identity-system]] T2, T6 |
+| ECS + S3 + KMS | [[EPIC-001-aws-infrastructure-foundation]] T5, T7, T4 |
 
 ---
 
@@ -509,50 +819,25 @@ T1 (Eligibility) ──> T2 (Prior Auth)
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Clearinghouse integration delays (API access, testing environments) | High | High | Start clearinghouse enrollment early (Week 1); have backup clearinghouse option; build mock clearinghouse for testing |
-| X12 parsing complexity (payer-specific variations in 835/271) | High | Medium | Start with top 5 payers; build flexible parser with payer-specific overrides; maintain payer quirks database |
-| Payer-specific claim requirements not documented | Medium | High | Build payer rules database incrementally; start with Medicare/Medicaid (well-documented); add commercial payers as enrolled |
-| AI coding engine suggests incorrect codes leading to compliance risk | Medium | Critical | Mandatory human review for all codes; compliance alert system; regular coding accuracy audits; coding education alerts |
-| Low clean claim rate during initial deployment | High | Medium | Aggressive scrubbing rules; start with simple claim types (E/M only); add complexity incrementally |
-| Timely filing deadlines missed during system transition | Low | High | Track filing deadlines with buffer alerts (7 days); daily aging report; escalation for claims approaching deadline |
-
----
-
-## Timeline
-
-```
-Week 7 (Apr 17 - Apr 23)
-|----- T1: Eligibility Verification (270/271) ------|
-|----- T2: Prior Authorization Tracking -------------|
-|----- T3: AI Coding Engine v1 (start) -------------|
-
-Week 8 (Apr 24 - Apr 30)
-|----- T3: AI Coding Engine v1 (complete) ----------|
-|----- T4: Charge Capture Workflow ------------------|
-|----- T5: Claims Generation 837P (start) ----------|
-
-Week 9 (May 1 - May 7)
-|----- T5: Claims Generation 837P (complete) -------|
-|----- T6: Claims Scrubbing Engine ------------------|
-|----- T7: Clearinghouse Integration ----------------|
-
-Week 10 (May 8 - May 14)
-|----- T8: Remittance Processing (835) --------------|
-|----- T9: Denial Tracking and Management ------------|
-|----- T10: AI Denial Prediction --------------------|
-|----- T11: Revenue Analytics Dashboard --------------|
-```
+| Clearinghouse onboarding takes 4-8 weeks | High | Critical | Start clearinghouse evaluation and contracting in Week 1; use clearinghouse sandbox for development |
+| X12 format complexity causes claim rejections | High | High | Use established X12 library; test with clearinghouse validation tools; start with single payer |
+| Payer enrollment delays for pilot practices | High | Medium | Begin enrollment process 60 days before pilot; prioritize top 5 payers by volume |
+| AI denial prediction insufficient training data | Medium | Medium | Start with rule-based prediction using known denial patterns; add ML model as data accumulates |
+| Fee schedule data management complexity | Medium | Medium | Start with Medicare fee schedule; add commercial payer schedules incrementally |
+| Real-time eligibility API rate limits | Medium | Low | Implement caching; batch verification for scheduled appointments; respect rate limits |
 
 ---
 
 ## Definition of Done
 
-- [ ] Eligibility verification returns real-time benefits from major payers
-- [ ] Charges auto-captured from AI-coded clinical encounters
-- [ ] X12 837P claims generated and submitted via clearinghouse
-- [ ] X12 835 remittances parsed and payments auto-posted
-- [ ] Denial tracking with categorization and appeal workflow
-- [ ] AI denial prediction flags high-risk claims pre-submission
-- [ ] Revenue analytics dashboard operational with core metrics
-- [ ] Clean claim rate > 95% in testing with synthetic data
-- [ ] All billing data persisted as FHIR resources (Claim, ClaimResponse, EOB, Coverage)
+- [ ] Eligibility verification returns real-time results for top 5 payers
+- [ ] Prior auth tracking dashboard operational with status workflow
+- [ ] AI-assisted prior auth reduces preparation time by 50%+
+- [ ] Claims generated, scrubbed, and submitted electronically
+- [ ] Clean claim rate > 90%
+- [ ] Remittance auto-posts payments with > 95% match rate
+- [ ] Denial tracking categorizes and routes denials for follow-up
+- [ ] AI denial prediction flags high-risk claims before submission
+- [ ] Revenue dashboard shows all key metrics with drill-down
+- [ ] Full revenue cycle tested end-to-end with synthetic data
+- [ ] All X12 transactions stored for 7-year HIPAA retention
