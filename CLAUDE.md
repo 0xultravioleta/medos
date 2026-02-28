@@ -1,232 +1,194 @@
-# CLAUDE.md - MedOS Obsidian Vault
+# CLAUDE.md - MedOS Healthcare OS
 
-> Instrucciones para Claude al trabajar dentro del vault de MedOS.
-> Este archivo es educativo: explica conceptos de Obsidian para que el usuario aprenda.
-
----
-
-## QUE ES ESTE VAULT
-
-MedOS es el proyecto de Healthcare OS -- un sistema operativo AI-native para healthcare en USA.
-Este Obsidian vault es la base de conocimiento, gestion de proyectos, y documentacion tecnica.
-
-**Vault root:** `Z:\medos\` -- todo el contenido vive aqui.
+> Instrucciones operativas para Claude al trabajar en el proyecto MedOS.
+> Actualizado: 2026-02-28
 
 ---
 
-## ESTRUCTURA DE CARPETAS
+## PROYECTO
+
+**MedOS** = Healthcare OS -- sistema operativo AI-native para healthcare en USA.
+- **Capital:** $100M family office (Miami, FL)
+- **Pitch a:** Dr. Di Reze (Technical Operations)
+- **Target:** Mid-size specialty practices (5-30 providers) en Florida
+- **Especialidad inicial:** Orthopedics o Dermatology
+- **Equipo:** 2 personas + AI tools (Claude Code + Cursor = 5-10x multiplier)
+- **Timeline:** 90 dias Foundation -> Pilot (Sprint 0 = 2026-03-01)
+
+**Vault root:** `Z:\medos\` -- este es un Obsidian vault Y repo Git.
+
+---
+
+## FLUJO DE EJECUCION
+
+El trabajo sigue esta jerarquia (de estrategico a operativo):
 
 ```
-Z:\medos\                     # VAULT ROOT (abrir esta carpeta en Obsidian)
-  .obsidian/                  # Configuracion de Obsidian (no tocar manualmente)
-  00-inbox/                   # Captura rapida -- notas nuevas caen aqui
-  01-daily/                   # Daily notes organizadas por YYYY/MM/
-  02-meetings/                # Notas de reuniones con stakeholders
-  03-projects/                # Epics, features activas, sprints
-  04-architecture/            # Decisiones tecnicas y system design
-    adr/                      # Architecture Decision Records
-    diagrams/                 # Diagramas (Excalidraw, Mermaid)
-    system-design/            # Documentos de diseno de sistema
-  05-domain/                  # Conocimiento de healthcare (PKM)
-    clinical/                 # Workflows clinicos, terminologia medica
-    regulatory/               # HIPAA, FDA, state laws
-    standards/                # FHIR, HL7, X12, ICD-10, CPT
-    billing/                  # Revenue cycle, claims, denials
-  06-engineering/             # Standards de ingenieria
-    api-specs/                # Especificaciones de API
-    infrastructure/           # AWS, Terraform, CI/CD
-    security/                 # Security policies, threat models
-    testing/                  # Testing strategies, QA
-  07-business/                # GTM, pricing, hiring, investors
-  08-retrospectives/          # Retros y post-mortems
-  09-archive/                 # Notas completadas o deprecated
-  _MOCs/                      # Maps of Content (indice de navegacion)
-  assets/
-    attachments/              # Imagenes, PDFs pegados en notas
-    templates/                # Templates para nuevas notas
-    excalidraw/               # Diagramas Excalidraw
+HEALTHCARE_OS_MASTERPLAN.md    -> Vision, estrategia, numeros
+  └── PRE-DEV-CHECKLIST.md     -> Day 0: legal, cuentas, tools (ANTES de codear)
+      └── PHASE-1-EXECUTION-PLAN.md  -> 117 tasks, 7 sprints, dia-a-dia
+          └── EPIC-001 a EPIC-006    -> Detalle por area con acceptance criteria
 ```
 
-### Donde va cada tipo de archivo
+### Task IDs
+Formato: `S{sprint}-T{numero}` (ej: `S0-T01`, `S1-T15`, `S4-T06`)
+- Sprint 0 tiene 43 tasks (las mas granulares, dia por dia)
+- Cada task tiene: Owner (A/B), horas estimadas, dependencias, acceptance criteria
 
-| Tipo de nota | Carpeta | Template |
-|-------------|---------|----------|
-| Ideas sueltas, notas rapidas | `00-inbox/` | (ninguno) |
+### Tracking de Progreso
+Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
+- `pending` -> `in-progress` -> `done`
+- Tambien actualizar el frontmatter `status` de los EPICs cuando cambien
+
+### Sprints
+| Sprint | Semanas | Foco |
+|--------|---------|------|
+| S0 | W1-2 | AWS, CI/CD, Auth, DB, FastAPI, FHIR Patient CRUD |
+| S1 | W3-4 | FHIR resources, patient matching, event bus |
+| S2 | W5-6 | Whisper, Claude NLP, SOAP notes, provider UI |
+| S3 | W7-8 | Eligibility, AI coding, claims (X12 837P) |
+| S4 | W9-10 | Prior auth (X12 278), denials, analytics |
+| S5 | W11-12 | Security hardening, pen test, onboarding |
+| S6 | W13 | Prod deploy, pilot onboarding, go-live |
+
+---
+
+## TECH STACK
+
+| Capa | Tecnologia |
+|------|-----------|
+| Backend | FastAPI (Python 3.12+), SQLAlchemy 2.0, Pydantic v2 |
+| Frontend | Next.js 15 (App Router, Server Components para PHI) |
+| DB principal | PostgreSQL 17 + pgvector (FHIR JSONB nativo) |
+| Cache | Redis 7+ |
+| Events | EventBridge |
+| LLM | Claude API (con HIPAA BAA) |
+| Agents | LangGraph |
+| Speech | Whisper v3 (self-hosted GPU) |
+| Cloud | AWS (HIPAA BAA) |
+| IaC | Terraform (NUNCA CloudFormation) |
+| CI/CD | GitHub Actions |
+| Multi-tenancy | Schema-per-tenant + per-tenant KMS |
+| Observability | Langfuse (LLM), CloudWatch (infra) |
+
+---
+
+## MAPA DE ARCHIVOS CLAVE
+
+### Ejecucion (que hacer)
+| Archivo | Proposito |
+|---------|-----------|
+| `03-projects/PRE-DEV-CHECKLIST.md` | Todo ANTES de Sprint 0 |
+| `03-projects/PHASE-1-EXECUTION-PLAN.md` | 117 tasks, dia-a-dia |
+| `03-projects/EPIC-001` a `EPIC-006` | Detalle por area |
+
+### Arquitectura (como hacerlo)
+| Archivo | Decision |
+|---------|----------|
+| `04-architecture/adr/ADR-001-*` | FHIR-native JSONB en PostgreSQL |
+| `04-architecture/adr/ADR-002-*` | Schema-per-tenant + RLS + KMS |
+| `04-architecture/adr/ADR-003-*` | LangGraph + Claude agents |
+| `04-architecture/adr/ADR-004-*` | FastAPI backend structure |
+| `04-architecture/system-design/System-Architecture-Overview.md` | Arquitectura completa |
+
+### Domain Knowledge (por que asi)
+| Archivo | Dominio |
+|---------|---------|
+| `05-domain/standards/FHIR-R4-Deep-Dive.md` | FHIR R4: recursos, search, profiles |
+| `05-domain/standards/X12-EDI-Deep-Dive.md` | X12: 270, 837P, 835 con ejemplos |
+| `05-domain/regulatory/HIPAA-Deep-Dive.md` | HIPAA completo + Day 1 checklist |
+| `05-domain/regulatory/SOC2-HITRUST-Roadmap.md` | Compliance timeline + costos |
+| `05-domain/billing/Revenue-Cycle-Deep-Dive.md` | RCM lifecycle completo |
+| `05-domain/billing/Prior-Authorization-Deep-Dive.md` | PA automation + Da Vinci PAS |
+| `05-domain/clinical/Ambient-AI-Documentation.md` | Pipeline ambient AI |
+| `05-domain/clinical/Clinical-Workflows-Overview.md` | Patient journey map |
+| `05-domain/clinical/Patient-Engagement-Patterns.md` | RPM, telehealth, scheduling |
+| `05-domain/clinical/Population-Health-Analytics.md` | HCC, HEDIS, MIPS |
+
+### Engineering (guias de implementacion)
+| Archivo | Guia |
+|---------|------|
+| `06-engineering/infrastructure/AWS-HIPAA-Infrastructure.md` | Terraform + AWS setup |
+| `06-engineering/security/Auth-SMART-on-FHIR.md` | Auth0, RBAC, audit trail |
+| `06-engineering/security/NextJS-Healthcare-Frontend.md` | Server Components, PHI safety |
+| `06-engineering/api-specs/LangGraph-Agent-Implementation.md` | 4 agents con codigo |
+
+---
+
+## REGLAS DE OBSIDIAN
+
+### Notas
+1. **SIEMPRE** frontmatter YAML con `type`, `date`, `tags`
+2. **SIEMPRE** `[[wikilinks]]` para notas internas, `[text](url)` solo para URLs externas
+3. **SIEMPRE** poner notas en la carpeta correcta (ver tabla abajo)
+4. **NUNCA** crear notas sueltas en root (excepto CLAUDE.md y HEALTHCARE_OS_MASTERPLAN.md)
+5. **NUNCA** borrar frontmatter existente
+
+### Donde va cada nota
+| Tipo | Carpeta | Template |
+|------|---------|----------|
+| Ideas rapidas | `00-inbox/` | ninguno |
 | Work log diario | `01-daily/YYYY/MM/` | `tpl-daily` |
-| Notas de reunion | `02-meetings/` | `tpl-meeting` |
-| Feature o epic | `03-projects/` | `tpl-epic` |
-| Decision record | `04-architecture/adr/` | `tpl-adr` |
-| Concepto de healthcare | `05-domain/<subcarpeta>/` | `tpl-domain` |
-| Bug investigation | Donde corresponda | `tpl-bug` |
-| Retro o post-mortem | `08-retrospectives/` | (libre) |
-| Nota obsoleta | `09-archive/` | (mover ahi) |
+| Reuniones | `02-meetings/` | `tpl-meeting` |
+| Epics/features | `03-projects/` | `tpl-epic` |
+| ADRs | `04-architecture/adr/` | `tpl-adr` |
+| Healthcare knowledge | `05-domain/<sub>/` | `tpl-domain` |
+| Bug investigations | donde corresponda | `tpl-bug` |
+| Retros | `08-retrospectives/` | libre |
 
----
-
-## OBSIDIAN CONCEPTS (GUIA EDUCATIVA)
-
-### Wikilinks [[]]
-
-Obsidian usa `[[wikilinks]]` para conectar notas entre si.
-Esto es lo que hace a Obsidian poderoso -- crea un grafo de conocimiento.
-
-```markdown
-Ver el [[HEALTHCARE_OS_MASTERPLAN]] para detalles.
-La arquitectura esta en [[MOC-Architecture]].
-Relacionado con [[FHIR R4]] y [[Prior Authorization]].
+### Tags (kebab-case, en frontmatter)
+```
+#daily #meeting #adr #epic #bug #domain #retro
+#module-a ... #module-h #frontend #backend #infra #ai
+#phase-1 #phase-2 #phase-3
+#clinical #regulatory #billing #standards #fhir #hipaa #x12
+#urgent #blocked #review-needed #decision #learning #risk
 ```
 
-**Reglas:**
-- SIEMPRE usar `[[wikilinks]]` en vez de `[links](markdown)` tradicionales
-- Obsidian resuelve el nombre automaticamente, no necesitas paths completos
-- Si la nota no existe aun, el link se muestra en gris -- y al hacer click, la crea
-- Para linkear a una seccion especifica: `[[nota#seccion]]`
-- Para mostrar texto diferente: `[[nota|texto visible]]`
-
-### Frontmatter (YAML)
-
-El bloque al inicio de cada nota entre `---` es metadata estructurada.
-Obsidian lo muestra como "Properties" en la UI.
-
-```yaml
 ---
-type: epic              # Tipo de nota (para filtrar con Dataview)
-date: "2026-02-27"      # Fecha de creacion
-status: active          # Estado actual
-tags:                   # Tags para categorizar
-  - project
-  - phase-1
-priority: high          # Prioridad
-owner: "lxhxr"          # Responsable
----
-```
 
-**Reglas:**
-- TODA nota creada por Claude DEBE tener frontmatter con al menos `type`, `date`, y `tags`
-- Las fechas van entre comillas: `"2026-02-27"` (YAML las interpreta mal sin comillas)
-- Tags van como lista YAML, no inline
+## REGLAS DE CODIGO (para cuando empecemos Sprint 0)
 
-### Tags
+### Repos
+- `medos-platform` -- monorepo: FastAPI backend + Next.js frontend
+- `medos-terraform` -- infraestructura IaC
 
-Los tags categorizan notas y permiten buscarlas rapidamente.
+### Convenciones
+- **Python:** FastAPI + async, type hints everywhere, ruff linter
+- **Frontend:** TypeScript strict, Server Components por default, PHI NUNCA en Client Components
+- **FHIR:** todo recurso se almacena como JSONB nativo, NUNCA modelo relacional traducido
+- **Tests:** pytest (backend), Vitest + Playwright (frontend)
+- **Commits:** conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`)
+- **Secrets:** AWS Secrets Manager, NUNCA en codigo, NUNCA en .env commiteado
 
-**Taxonomia de tags para MedOS:**
-
-```
-# Por tipo de contenido
-#daily, #meeting, #adr, #epic, #bug, #domain, #retro
-
-# Por area del sistema
-#module-a, #module-b, #module-c, ... #module-h
-#frontend, #backend, #infra, #ai, #data
-
-# Por fase del proyecto
-#phase-1, #phase-2, #phase-3
-
-# Por dominio de healthcare
-#clinical, #regulatory, #billing, #standards
-#fhir, #hl7, #x12, #hipaa
-
-# Por prioridad/estado
-#urgent, #blocked, #review-needed
-
-# Especiales
-#decision (para decisiones importantes)
-#learning (para cosas que aprendimos)
-#risk (para riesgos identificados)
-```
-
-**Reglas:**
-- Tags van en el frontmatter, NO inline en el texto (para consistencia)
-- Usar kebab-case: `#phase-1` no `#Phase1`
-- No inventar tags nuevos sin necesidad -- buscar primero si ya existe uno
-
-### Maps of Content (MOCs)
-
-Los MOCs son notas-indice que agrupan y conectan otras notas por tema.
-Viven en `_MOCs/` y usan Dataview queries para auto-actualizarse.
-
-- `Home.md` -- Dashboard principal, punto de entrada
-- `MOC-Architecture.md` -- Todo sobre arquitectura
-- `MOC-Domain-Knowledge.md` -- Conocimiento de healthcare
-- `MOC-Projects.md` -- Proyectos activos y roadmap
-- `MOC-Business.md` -- Estrategia de negocio
-
-**Para que los queries funcionen**, instalar el plugin community **Dataview**.
-
-### Templates
-
-En `assets/templates/` hay templates para cada tipo de nota.
-En Obsidian: `Ctrl+T` o Command Palette > "Insert template".
-
-Templates disponibles:
-- `tpl-daily` -- Para daily notes
-- `tpl-meeting` -- Para notas de reunion
-- `tpl-adr` -- Para Architecture Decision Records
-- `tpl-epic` -- Para proyectos/epics
-- `tpl-domain` -- Para conocimiento de healthcare
-- `tpl-bug` -- Para investigacion de bugs
+### Healthcare compliance en codigo
+- **NUNCA** PHI en logs (los 18 HIPAA identifiers)
+- **NUNCA** PHI en error messages
+- **NUNCA** PHI en Client Components de Next.js
+- **SIEMPRE** audit trail (FHIR AuditEvent) para acceso a PHI
+- **SIEMPRE** tenant isolation verificada en cada request
+- **SIEMPRE** confidence scoring en outputs de AI (< 0.85 = human review)
 
 ---
 
-## REGLAS PARA CLAUDE
+## PLUGINS OBSIDIAN
 
-### Al crear notas
-
-1. **SIEMPRE** incluir frontmatter YAML con `type`, `date`, y `tags`
-2. **SIEMPRE** usar `[[wikilinks]]` para referencias a otras notas
-3. **SIEMPRE** poner la nota en la carpeta correcta segun el tipo
-4. **NUNCA** crear notas sueltas en el root del vault (excepto CLAUDE.md y HEALTHCARE_OS_MASTERPLAN.md)
-5. **NUNCA** usar markdown links `[text](url)` para notas internas (usar `[[wikilinks]]`)
-6. Los links externos (URLs web) SI usan markdown links `[text](https://...)`
-
-### Al editar notas
-
-1. **NUNCA** borrar frontmatter existente -- solo agregar o actualizar campos
-2. **NUNCA** cambiar el `type` de una nota sin razon
-3. Si una nota esta en la carpeta equivocada, moverla a la correcta
-4. Actualizar `status` cuando cambie el estado de algo
-
-### Naming conventions
-
-- Daily notes: `YYYY-MM-DD.md` (ej: `2026-02-27.md`)
-- ADRs: `ADR-NNN-titulo-corto.md` (ej: `ADR-001-fhir-native-data-model.md`)
-- Otros: titulo descriptivo en kebab-case o titulo natural
-
-### Healthcare compliance
-
-- **NUNCA** poner PHI (Protected Health Information) en el vault
-- **NUNCA** poner datos reales de pacientes, ni de prueba
-- Usar datos sinteticos o placeholders para ejemplos
-- Marcar notas con info sensible con tag `#confidential`
-
----
-
-## PLUGINS RECOMENDADOS (Community)
-
-Estos se instalan desde Settings > Community Plugins > Browse:
-
-| Plugin | Para que | Prioridad |
-|--------|----------|-----------|
-| **Dataview** | Queries automaticos en MOCs | CRITICO |
-| **Templater** | Templates avanzados con variables | Alto |
-| **Calendar** | Navegacion visual de daily notes | Alto |
-| **Excalidraw** | Diagramas de arquitectura | Medio |
-| **Git** | Backup automatico con Git | Alto |
-| **Kanban** | Boards para project management | Medio |
-| **Mermaid** | Diagramas en markdown | Medio |
+| Plugin | Status | Para que |
+|--------|--------|----------|
+| Dataview | Instalado | Queries en MOCs |
+| Templater | Instalado | Templates con variables |
+| Calendar | Pendiente | Daily notes visual |
+| Git | Pendiente | Backup automatico |
 
 ---
 
 ## QUICK REFERENCE
 
 ```
-Ctrl+O          Abrir nota por nombre (Quick Switcher)
-Ctrl+P          Command Palette (buscar cualquier comando)
-Ctrl+T          Insertar template
-Ctrl+N          Nueva nota
-Ctrl+E          Toggle edit/preview mode
-Ctrl+Click      Abrir link en nueva tab
-[[              Iniciar wikilink (autocomplete)
-#               Iniciar tag (autocomplete)
+Ctrl+O     Quick Switcher (abrir nota por nombre)
+Ctrl+P     Command Palette
+Ctrl+T     Insertar template
+Ctrl+G     Graph View
+Ctrl+E     Toggle edit/preview
+[[         Iniciar wikilink
 ```
