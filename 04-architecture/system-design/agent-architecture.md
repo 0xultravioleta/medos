@@ -1021,6 +1021,62 @@ See [[EPIC-007-mcp-sdk-refactoring]] T8 for Sprint 2 implementation details. See
 
 ---
 
+## Underpayment Detection Capability (Sprint 4)
+
+Underpayment detection is not a standalone agent but an **AI-powered analytical module** integrated into the billing MCP tools. It runs automatically during payment posting (when 835 remittance data is processed) and can be invoked on-demand through the `billing_post_payment` MCP tool.
+
+### How It Works
+
+```
+835 Remittance Parsed
+    │
+    ▼
+Per-Service-Line Analysis
+    │
+    ├── Compare paid amount vs contracted rate
+    ├── Compare allowed amount vs fee schedule
+    └── Identify adjustment codes (CO, OA, PI, PR)
+          │
+          ▼
+    Variance Calculation
+          │
+    ┌─────┼────────────────┐
+    │     │                │
+  >20%  10-20%           <10%
+CRITICAL MODERATE        MINOR
+    │     │                │
+    ▼     ▼                ▼
+  Flag + Alert    Flag    Log only
+```
+
+### Severity Classification
+
+| Severity | Variance | Action | Notification |
+|----------|----------|--------|--------------|
+| **Critical** | > 20% underpaid | Flag for immediate billing staff review, auto-generate appeal template | Alert to billing manager |
+| **Moderate** | 10-20% underpaid | Flag in underpayment queue with comparison data | Visible in billing dashboard |
+| **Minor** | < 10% underpaid | Log for trend analysis, no immediate action | Included in weekly analytics |
+
+### Integration Points
+
+| Integration | Detail |
+|-------------|--------|
+| **MCP Tool** | `billing_post_payment` -- underpayment flags included in payment posting results |
+| **Data Source** | Contracted rates from payer contracts (configured in [[EPIC-010-security-pilot-readiness]] T9 practice configuration panel) |
+| **Output** | Underpayment report per remittance: service line, expected amount, paid amount, variance, severity, suggested action |
+| **Analytics** | Feeds into revenue analytics dashboard ([[EPIC-009-revenue-cycle-completion]] T6) for trend tracking |
+| **Denial Management** | Critical underpayments can trigger the Denial Management agent for appeal generation |
+
+### Key Design Decisions
+
+- **Not a full agent** because underpayment detection is a deterministic comparison (paid vs contracted), not a multi-step reasoning task requiring LLM orchestration.
+- **AI-enhanced** for edge cases: when adjustment reason codes are ambiguous or contractual rates are missing, Claude classifies the adjustment and estimates expected payment from historical data.
+- **Confidence scoring** applies: if the contracted rate lookup confidence is < 0.85 (e.g., rate not found, multiple possible rates), the underpayment flag includes a `needs_review: true` indicator.
+
+See [[EPIC-009-revenue-cycle-completion]] T4 for the payment posting module that hosts this capability.
+
+---
+
 ## Security Pipeline (All Agents)
 
 ```mermaid
