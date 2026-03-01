@@ -604,6 +604,87 @@ This $755,000 in recovered/improved revenue is the value proposition MedOS deliv
 
 ---
 
+## 11. MedOS Claims Pipeline Implementation
+
+This section maps the RCM workflow described above to the actual MedOS implementation built in Sprint 4 ([[EPIC-009-revenue-cycle-completion]]).
+
+### How X12 Modules Map to RCM Workflow Steps
+
+| RCM Workflow Step | MedOS Module | MCP Tool | Implementation |
+|-------------------|-------------|----------|----------------|
+| 2.2 Eligibility Verification | Billing MCP Server | `billing_check_eligibility` | X12 270/271 via clearinghouse (Sprint 2) |
+| 2.3 Prior Authorization | Prior Auth Agent + Billing MCP | `pa_check_required`, `pa_submit` | X12 278 + Da Vinci PAS (Sprint 2) |
+| 2.4 Clinical Documentation | Clinical Scribe Agent + Scribe MCP | `scribe_start_session`, `scribe_get_soap_note` | Whisper + Claude NLP (Sprint 1) |
+| 2.5 Medical Coding | AI Coding Engine | Integrated in scribe pipeline | Claude ICD-10/CPT with confidence scoring |
+| 2.7 Claims Generation | X12 837P Generator | `billing_generate_claim` | FHIR Claim -> 005010X222A1 (Sprint 4) |
+| 2.8 Claims Scrubbing | Claims Scrubbing Engine | `billing_scrub_claim` | 15+ rules, NCCI edits, denial risk scoring (Sprint 4) |
+| 2.9 Remittance/Payment | X12 835 Parser + Payment Posting | `billing_post_payment` | 835 parsing, payment matching, underpayment detection (Sprint 4) |
+| 2.10 Denial Management | Denial Management Agent | `billing_denial_lookup`, `billing_submit_appeal` | CARC/RARC analysis, AI appeal letters (Sprint 2) |
+| 2.12 Analytics | Claims Analytics | `billing_claims_analytics` | Clean claim rate, denial breakdown, AR aging (Sprint 4) |
+
+### Claims Pipeline Flow
+
+```mermaid
+flowchart TD
+    subgraph "Pre-Service (Sections 2.1-2.3)"
+        REG[Patient Registration] --> ELIG[Eligibility Check<br/>X12 270/271]
+        ELIG --> PA{PA Required?}
+        PA -->|Yes| PAREQ[Prior Auth<br/>X12 278 / Da Vinci PAS]
+        PA -->|No| ENC
+        PAREQ --> ENC[Encounter]
+    end
+
+    subgraph "Point of Service (Sections 2.4-2.5)"
+        ENC --> DOC[AI Clinical Documentation<br/>Whisper + Claude SOAP]
+        DOC --> CODE[AI Medical Coding<br/>ICD-10 + CPT Suggestions]
+        CODE --> REVIEW[Human Review + Sign-off]
+    end
+
+    subgraph "Post-Service (Sections 2.7-2.9)"
+        REVIEW --> SCRUB[Claims Scrubbing<br/>15+ Rules Engine]
+        SCRUB -->|Clean| GEN[X12 837P Generator]
+        SCRUB -->|Issues| FIX[Correct + Re-scrub]
+        FIX --> SCRUB
+        GEN --> SUBMIT[Clearinghouse Submission]
+        SUBMIT --> ADJ[Payer Adjudication<br/>14-30 days]
+        ADJ --> ERA[X12 835 Remittance]
+        ERA --> POST[Payment Posting]
+    end
+
+    subgraph "Follow-up (Sections 2.10-2.12)"
+        POST --> DENIED{Denied?}
+        DENIED -->|Yes| DENIAL[AI Denial Management<br/>CARC/RARC Analysis]
+        DENIAL --> APPEAL[AI Appeal Letter<br/>+ Human Approval]
+        DENIED -->|No| ANALYTICS[Revenue Analytics<br/>Dashboard]
+        APPEAL --> ANALYTICS
+    end
+```
+
+### Key Implementation Decisions
+
+1. **FHIR-native throughout**: Claims are stored as FHIR Claim resources. The X12 837P is generated at submission time, not stored as the primary format. This keeps the data model clean and enables FHIR-based analytics.
+
+2. **Scrubbing before generation**: The claims scrubbing engine validates the FHIR Claim resource before generating the X12 837P. This catches errors at the structured data level where they are easier to fix.
+
+3. **MCP tools for agent access**: All claims pipeline operations are exposed via MCP tools, enabling the Denial Management and Prior Auth agents to interact with claims data programmatically.
+
+4. **Human-in-the-loop for financial actions**: Claim submission and payment posting require human approval via the Approvals UI (built in Sprint 3, [[EPIC-008-demo-polish]]).
+
+5. **Underpayment detection at posting**: When payments are posted, the system compares paid amounts against expected amounts from payer contracts, flagging discrepancies automatically.
+
+### Revenue Impact Projection
+
+Based on the metrics in Section 9, MedOS's claims pipeline targets:
+
+| Metric | Industry Avg | MedOS Target | How |
+|--------|-------------|-------------|-----|
+| Clean Claim Rate | 90-95% | >98% | AI scrubbing with 15+ rules + NLP validation |
+| Denial Rate | 5-15% | <5% | Pre-submission denial prediction + scrubbing |
+| Days to Bill | 3-5 days | <1 day | Automated coding + claim generation from encounter |
+| Denial Appeal Rate | 35-50% | >80% | AI-drafted appeals with one-click approval |
+
+---
+
 ## Summary
 
 Revenue cycle management is the financial backbone of healthcare delivery. It is extraordinarily complex -- spanning 12+ workflow stages, 6+ X12 EDI transaction types, three coding systems with 80,000+ codes, and thousands of payer-specific rules. This complexity creates massive inefficiency: $262 billion in annual administrative waste, 15-20% claim denial rates, and 60%+ of denials never appealed.

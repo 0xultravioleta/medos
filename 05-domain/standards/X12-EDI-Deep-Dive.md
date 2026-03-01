@@ -793,9 +793,86 @@ def x12_270_to_fhir_eligibility_request(segments: list[dict]) -> dict[str, Any]:
 
 ---
 
+## 11. MedOS Implementation: X12 837P and 835
+
+This section documents how MedOS implements the X12 transactions described above. Built in Sprint 4 ([[EPIC-009-revenue-cycle-completion]]), the claims pipeline converts FHIR resources to X12 EDI and back.
+
+### 837P Generation in MedOS
+
+MedOS generates X12 837P (005010X222A1) professional claims from FHIR Claim resources. The generator follows this data mapping:
+
+| FHIR Source | X12 837P Target | Loop/Segment |
+|-------------|----------------|--------------|
+| `Claim.provider` (Practitioner) | Billing Provider NPI + Name | Loop 2010AA (NM1) |
+| `Claim.patient` (Patient) | Subscriber demographics | Loop 2010BA (NM1, DMG) |
+| `Claim.insurer` (Organization) | Payer identification | Loop 2010BB (NM1) |
+| `Claim.diagnosis[]` (Condition) | ICD-10-CM codes | Loop 2300 (HI segments) |
+| `Claim.item[]` (service lines) | CPT codes + charges + units | Loop 2400 (SV1, DTP) |
+| `Claim.item[].modifier[]` | CPT modifiers (25, 59, etc.) | Loop 2400 (SV1 element) |
+| `Claim.total` | Total claim charge | Loop 2300 (CLM) |
+| `Encounter.period.start` | Date of service | Loop 2400 (DTP*472) |
+| `Coverage.subscriberId` | Subscriber/member ID | Loop 2010BA (NM1*09) |
+
+**Key design decision**: FHIR Claim is the source of truth. The X12 837P is generated at submission time and never stored as the primary data format. This keeps the data model clean for FHIR-based analytics and avoids dual-format maintenance.
+
+### 835 Parsing in MedOS
+
+The 835 parser extracts structured payment data from ERA files. Key segment mapping:
+
+| X12 835 Segment | Extracted Data | MedOS Field |
+|-----------------|---------------|-------------|
+| CLP (Claim Payment) | Claim ID, status, charged, paid | `RemittanceClaim.paid_amount` |
+| CAS (Claim Adjustment) | CARC code, adjustment amount, group | `AdjustmentDetail.reason_code` |
+| SVC (Service Line) | CPT, charged, allowed, paid | `ServiceLinePayment.allowed_amount` |
+| PLB (Provider Adjustment) | Provider-level adjustments | `ProviderAdjustment.amount` |
+
+**CAS Group Codes used for routing:**
+
+| Group | Meaning | MedOS Action |
+|-------|---------|-------------|
+| CO (Contractual Obligation) | Payer adjustment per contract | Auto-post as contractual write-off |
+| PR (Patient Responsibility) | Patient owes this amount | Generate patient statement |
+| OA (Other Adjustment) | Other adjustments | Flag for manual review |
+| PI (Payer Initiated) | Payer-initiated reduction | Flag for underpayment review |
+| CR (Correction/Reversal) | Previous payment correction | Apply reversal to original posting |
+
+### Claims Scrubbing Rules
+
+The scrubbing engine validates claims pre-submission with 15+ rules. Each rule maps to a common denial CARC code:
+
+| Rule Category | What It Checks | Prevents CARC |
+|---------------|---------------|---------------|
+| Required fields | NPI, Tax ID, subscriber ID, dates | CO-16 (missing info) |
+| ICD-10 validity | Code exists and valid for DOS | CO-4 (inconsistent) |
+| CPT validity | Code valid, medical necessity pairing | CO-4 (inconsistent) |
+| Modifier correctness | 25, 59, XE/XS/XP/XU usage | CO-4 (modifier error) |
+| NCCI bundling | Unbundling detection | CO-236 (bundled) |
+| Duplicate detection | Same patient/DOS/CPT/payer | CO-18 (duplicate) |
+| Timely filing | Submission within payer deadline | CO-29 (timely filing) |
+| Authorization | PA number present when required | CO-97 (not authorized) |
+| Date consistency | DOS not in future, not before DOB | CO-16 (billing error) |
+
+### MCP Tool Integration
+
+All X12 operations are exposed via MCP tools in the Billing MCP server:
+
+| MCP Tool | X12 Transaction | Direction |
+|----------|----------------|-----------|
+| `billing_check_eligibility` | 270/271 | Provider -> Payer -> Provider |
+| `billing_generate_claim` | 837P | Provider -> Payer |
+| `billing_scrub_claim` | (pre-837P validation) | Internal |
+| `billing_post_payment` | 835 | Payer -> Provider |
+| `billing_claim_status` | 276/277 | Provider -> Payer -> Provider |
+
+See [[mcp-integration-plan]] for the full MCP architecture and [[EPIC-009-revenue-cycle-completion]] for Sprint 4 implementation details.
+
+---
+
 ## Key Connections
 
 - [[Prior-Authorization-Deep-Dive]] -- X12 278 is the EDI transaction for prior auth
 - [[Revenue-Cycle-Deep-Dive]] -- EDI transactions power the entire revenue cycle
 - [[FHIR-R4-Deep-Dive]] -- FHIR is the emerging complement/successor to X12 for some transactions
 - [[HEALTHCARE_OS_MASTERPLAN]] -- Module C (claims/billing) and Module D (AI/analytics) architecture
+- [[EPIC-009-revenue-cycle-completion]] -- Sprint 4 implementation of 837P generator, 835 parser, scrubbing engine
+- [[mcp-integration-plan]] -- Claims pipeline MCP tools

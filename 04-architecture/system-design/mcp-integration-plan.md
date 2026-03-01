@@ -510,6 +510,85 @@ See [[EPIC-008-demo-polish]] for the full Sprint 3 scope.
 
 ---
 
+## Claims Pipeline Architecture (Sprint 4)
+
+Sprint 4 ([[EPIC-009-revenue-cycle-completion]]) completes the revenue cycle by building the X12 claims pipeline. This pipeline connects FHIR Claim resources to clearinghouse submission and remittance processing, all accessible via 4 new MCP tools.
+
+```mermaid
+flowchart LR
+    subgraph "Claims Pipeline"
+        A[FHIR Claim Resource] --> B[Claims Scrubber]
+        B -->|Clean| C[X12 837P Generator]
+        B -->|Issues| D[Scrub Report]
+        C --> E[Clearinghouse / Payer]
+        E --> F[X12 835 Remittance]
+        F --> G[835 Parser]
+        G --> H[Payment Posting]
+        H --> I[Updated Claim Status]
+    end
+```
+
+### Claims Pipeline MCP Tools
+
+| MCP Tool | Operation | Approval Required |
+|----------|-----------|-------------------|
+| `billing_generate_claim` | Generate X12 837P from FHIR Claim | Yes (for submission) |
+| `billing_scrub_claim` | Run scrubbing rules, return denial risk score | No (read-only) |
+| `billing_post_payment` | Post payment from parsed 835 | Yes |
+| `billing_claims_analytics` | Query claims metrics (clean rate, denials, AR) | No (read-only) |
+
+### Updated Tool Count: 36 Total
+
+| Server | Tools | Status | Sprint |
+|--------|-------|--------|--------|
+| FHIR | 12 | Done (migrated to @hipaa_tool) | Sprint 1 -> 2 |
+| Scribe | 6 | Done (migrated to @hipaa_tool) | Sprint 1 -> 2 |
+| Billing | 12 | Done (8 Sprint 2 + 4 Sprint 4) | Sprint 2, 4 |
+| Scheduling | 6 | Done (NEW in Sprint 2) | Sprint 2 |
+| **Total** | **36** | **All operational** | |
+
+### End-to-End Claims Flow with MCP
+
+```mermaid
+sequenceDiagram
+    participant Agent as Billing Agent
+    participant GW as MCP Gateway
+    participant Scrub as Claims Scrubber
+    participant Gen as 837P Generator
+    participant CH as Clearinghouse
+    participant Parser as 835 Parser
+    participant Post as Payment Posting
+
+    Agent->>GW: billing_scrub_claim(claim_id)
+    GW->>Scrub: Validate claim against 15+ rules
+    Scrub-->>GW: Scrub report + denial risk score
+    GW-->>Agent: {clean: true, risk_score: 0.12}
+
+    Agent->>GW: billing_generate_claim(claim_id)
+    GW->>Gen: Generate X12 837P from FHIR Claim
+    Gen-->>GW: Valid 837P EDI data
+    GW-->>Agent: {status: "generated", requires_approval: true}
+
+    Note over Agent: Human approves submission
+
+    Agent->>CH: Submit 837P via clearinghouse
+    CH-->>Agent: Acknowledgment (997/999)
+
+    Note over CH: Payer adjudicates (14-30 days)
+
+    CH->>Parser: X12 835 Remittance
+    Parser-->>Agent: Structured payment data
+
+    Agent->>GW: billing_post_payment(parsed_835)
+    GW->>Post: Match payments to claims
+    Post-->>GW: Posted, patient responsibility calculated
+    GW-->>Agent: {posted: true, underpayments: []}
+```
+
+See [[EPIC-009-revenue-cycle-completion]] for the full Sprint 4 scope.
+
+---
+
 ## References
 
 - [[agent-architecture]] -- Agent framework that consumes MCP servers
@@ -520,5 +599,6 @@ See [[EPIC-008-demo-polish]] for the full Sprint 3 scope.
 - [[FHIR-R4-Deep-Dive]] -- FHIR standard that FHIR-MCP Server exposes
 - [[HIPAA-Deep-Dive]] -- HIPAA requirements for MCP security
 - [[MOC-Agent-Architecture]] -- Navigation index
+- [[EPIC-009-revenue-cycle-completion]] -- Sprint 4 claims pipeline
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [FHIR-MCP Server (GitHub)](https://github.com/fhir-mcp/fhir-mcp-server)
