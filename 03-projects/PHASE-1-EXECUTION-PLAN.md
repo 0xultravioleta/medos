@@ -257,7 +257,18 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 **Sprint Dates:** 2026-03-29 to 2026-04-11 (10 working days)
 
-**References:** [[EPIC-004-ai-clinical-documentation]], [[ADR-003-ai-agent-framework]], [[ADR-004-fastapi-backend-architecture]]
+**Status:** done
+
+**References:** [[EPIC-004-ai-clinical-documentation]], [[EPIC-007-mcp-sdk-refactoring]], [[ADR-003-ai-agent-framework]], [[ADR-004-fastapi-backend-architecture]], [[ADR-005-mcp-sdk-integration]]
+
+**Sprint 2 Actual Delivery:**
+- 174 tests passing, ruff clean
+- 32 MCP tools registered (12 FHIR + 6 Scribe + 8 Billing + 6 Scheduling)
+- 3 LangGraph agents operational (Clinical Scribe + Prior Auth + Denial Management)
+- HIPAAFastMCP subclass with @hipaa_tool decorators
+- Approval workflow API with queue management
+- Frontend `/docs` page with MCP tool catalog
+- ADR-005 created, EPIC-007 completed
 
 | ID | Task | Owner | Est. | Deps | Acceptance Criteria | Status |
 |----|------|-------|------|------|---------------------|--------|
@@ -304,7 +315,9 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 **Sprint Dates:** 2026-04-12 to 2026-04-25 (10 working days)
 
-**References:** [[EPIC-005-revenue-cycle-mvp]], [[Revenue-Cycle-Deep-Dive]], [[X12-EDI-Deep-Dive]]
+**References:** [[EPIC-005-revenue-cycle-mvp]], [[EPIC-008-demo-polish]], [[Revenue-Cycle-Deep-Dive]], [[X12-EDI-Deep-Dive]]
+
+**Note:** Sprint 3 now includes both the Revenue Cycle v1 tasks and the Demo Polish epic ([[EPIC-008-demo-polish]]). EPIC-008 covers: Approvals UI, frontend-backend API integration, WebSocket real-time events, agent runner API, patient intake workflow, enhanced seed data, and vault enrichment.
 
 | ID | Task | Owner | Est. | Deps | Acceptance Criteria | Status |
 |----|------|-------|------|------|---------------------|--------|
