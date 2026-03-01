@@ -50,6 +50,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | S4 | W9-10 | Revenue cycle completion: X12 837P, scrubbing, 835 parser, PA, denials, analytics | done |
 | S5 | W11-12 | Security hardening, field encryption, tenant onboarding, EHR bridge, monitoring, load testing | done |
 | S6 | W13 | Prod deploy, pilot onboarding, go-live | **in-progress** |
+| S4F | W9-10 | Theoria Medical pilot: 13 pages, 7 agents, public docs, Bring Your Agent | done |
 
 ### Platform Metrics (Sprint 6)
 | Metric | Count |
@@ -57,7 +58,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | Tests passing | 407+ |
 | MCP tools | 36 |
 | LangGraph agents | 5 |
-| Frontend routes | 21+ |
+| Frontend routes | 53+ |
 | Vault docs | 50+ |
 
 ---
@@ -201,6 +202,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 ### Convenciones
 - **Python:** FastAPI + async, type hints everywhere, ruff linter
 - **Frontend:** TypeScript strict, Server Components por default, PHI NUNCA en Client Components
+- **Public routes:** `/docs` served from `(public)` route group -- no auth required, for external agent integration docs
 - **FHIR:** todo recurso se almacena como JSONB nativo, NUNCA modelo relacional traducido
 - **Tests:** pytest (backend), Vitest + Playwright (frontend)
 - **Commits:** conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`)

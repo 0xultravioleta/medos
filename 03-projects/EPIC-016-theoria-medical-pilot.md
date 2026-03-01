@@ -204,6 +204,8 @@ MedOS transforms Theoria from a **physician services company** (8-12x EBITDA) in
 | S4F-T19 | Demo flow script for Dr. Di Rezze pitch (5-ACT stage directions) | ~200 | done |
 | S4F-T20 | Pitch strategy update with live demo URLs and deployment status | ~100 | done |
 | S4F-T18 | Master plan & vault documentation updates | ~200 | done |
+| S4F-T21 | Landing page + Public Docs + Bring Your Agent (`/docs` in `(public)` route group, no auth) | ~300 | done |
+| S4F-T22 | E2E navigation fix (eliminate navigateTo() -- replaced with Link clicks to prevent auth loss) | ~150 | done |
 
 ---
 
@@ -224,7 +226,9 @@ MedOS transforms Theoria from a **physician services company** (8-12x EBITDA) in
 - [x] Discharge Reconciliation shows hospital-SNF transition with discrepancy detection
 - [x] Care Plan Optimizer generates evidence-based AI recommendations
 - [x] Staffing Optimizer shows dynamic provider scheduling across facilities
-- [ ] Agent architecture for 7 new agents fully documented (Camino 2 — planned)
+- [ ] Agent architecture for 7 new agents fully documented (Camino 2 -- planned)
+- [x] E2E video without dashboard flash (navigateTo() bug eliminated)
+- [x] `/docs` publicly accessible without auth for external agent integration
 - [x] Mock data includes Theoria-specific details: ChartEasy references, Michigan SNF names, Empassion Health/ACO REACH metrics
 
 ---

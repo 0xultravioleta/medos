@@ -167,6 +167,7 @@ INTEGRATION LAYER
 - HL7v2 adapter (95% of hospitals still use HL7v2)
 - Third-party app marketplace (SMART on FHIR)
 - Developer portal + SDK (Python, JavaScript, C#)
+- **Public API docs** at `/docs` (no auth required) -- supports "Bring Your Agent" strategy for external agent integration via A2A endpoints
 
 #### A2A Protocol (Inter-Agent Communication)
 - **Agent-to-Agent (A2A) Protocol** adopted for inter-agent communication (see [[ADR-008-a2a-agent-communication]])
