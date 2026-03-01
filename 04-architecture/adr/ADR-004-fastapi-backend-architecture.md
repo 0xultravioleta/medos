@@ -315,6 +315,11 @@ Maximum performance with memory safety.
 - [[ADR-001-fhir-native-data-model]] -- Data layer accessed by the backend
 - [[ADR-002-multi-tenancy-schema-per-tenant]] -- Multi-tenancy middleware implemented in FastAPI
 - [[ADR-003-ai-agent-framework]] -- AI agents orchestrated from the backend
+- [[ADR-005-mcp-sdk-integration]] -- HIPAAFastMCP mounted on FastAPI
+- [[System-Architecture-Overview]] -- Full system architecture with FastAPI as core
+- [[EPIC-002-auth-identity-system]] -- Auth middleware for FastAPI
+- [[EPIC-007-mcp-sdk-refactoring]] -- MCP servers + agents on FastAPI
+- [[EPIC-008-demo-polish]] -- WebSocket endpoint and agent runner on FastAPI
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [SQLAlchemy 2.0 Async](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html)
 - [Pydantic v2](https://docs.pydantic.dev/latest/)

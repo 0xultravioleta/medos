@@ -531,3 +531,8 @@ This architecture connects to Module C (claims/billing) and Module D (AI/analyti
 - [[Revenue-Cycle-Deep-Dive]] -- PA's role in the revenue cycle
 - [[FHIR-R4-Deep-Dive]] -- FHIR Claim, ClaimResponse, Task resources
 - [[HEALTHCARE_OS_MASTERPLAN]] -- Module C and Module D architecture
+- [[agent-architecture]] -- Prior Authorization Agent specification (Section 2.2)
+- [[mcp-integration-plan]] -- Prior Auth MCP Server (7 tools) and Billing MCP Server (8 tools)
+- [[ADR-005-mcp-sdk-integration]] -- HIPAAFastMCP security pipeline for PA tools
+- [[EPIC-007-mcp-sdk-refactoring]] -- Prior Auth agent implementation (T7)
+- [[EPIC-008-demo-polish]] -- Patient intake workflow with PA check (T5)

@@ -80,7 +80,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 |---------|-----------|
 | `03-projects/PRE-DEV-CHECKLIST.md` | Todo ANTES de Sprint 0 |
 | `03-projects/PHASE-1-EXECUTION-PLAN.md` | 117 tasks, dia-a-dia |
-| `03-projects/EPIC-001` a `EPIC-006` | Detalle por area |
+| `03-projects/EPIC-001` a `EPIC-008` | Detalle por area (001-006 Foundation, 007 MCP SDK, 008 Demo Polish) |
 
 ### Arquitectura (como hacerlo)
 | Archivo | Decision |
@@ -111,6 +111,11 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 |---------|-----------|
 | `03-projects/EPIC-007-*` | MCP SDK refactoring + Sprint 2 scope |
 | `04-architecture/adr/ADR-005-*` | HIPAAFastMCP decision |
+
+### Sprint 3 Files
+| Archivo | Proposito |
+|---------|-----------|
+| `03-projects/EPIC-008-*` | Demo polish: Approvals UI, WebSocket, agent runner, intake workflow |
 
 ### Engineering (guias de implementacion)
 | Archivo | Guia |
