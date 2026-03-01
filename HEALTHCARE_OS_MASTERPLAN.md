@@ -297,8 +297,14 @@ Cross-network effects:
 - Pain points are acute (prior auths, coding, staffing)
 - Willing to pay for time savings (staff is #1 expense)
 
-### Recommended: Orthopedics or Dermatology First
+### Recommended First Verticals
+
+**Vertical 1: Mid-Size Specialty (Orthopedics or Dermatology)**
 High volume, procedure-heavy, lots of prior auth pain, tech-forward physicians.
+
+**Vertical 2: Post-Acute & Value-Based Care (SNFs, Assisted Living)**
+Theoria Medical-style operations: distributed telemedicine, CCM/RPM billing, ACO REACH contracts.
+See [[EPIC-016-theoria-medical-pilot]] and Section 16 for full Theoria strategy.
 
 ### Pricing
 **Tier 1 - Core:** $2,000-5,000/mo (scheduling, patient comms, basic analytics)
@@ -499,29 +505,49 @@ Nobody is building the **AI-native platform** -- the operating system where AI i
 
 ---
 
-## 13. THE 90-DAY PITCH TO DR. DI REZE
+## 13. THE PITCH TO DR. DI REZZE: THEORIA MEDICAL
 
-### The Framework (4 minutes total)
+### Strategic Context
 
-**1. The Problem (30 seconds)**
-"Healthcare practices run on software from the 2000s. Staff spends 60-70% of time on admin. Burnout is driving physicians out. The technology to fix this exists today, but nobody has built it from scratch with AI at the core."
+Dr. Justin Di Rezze is not a typical prospect. He is:
+- **CEO & Founder of Theoria Medical** -- a 21-state multispecialty physician services company focused on SNFs, Assisted Living, and hospital care
+- **PE-Backed** -- recently partnered with Amulet Capital Partners for national scale
+- **SPAC Principal** -- Praetorian Acquisition Corp (M&A mindset, not just operations)
+- **Family Office** -- Di Rezze Family Office (capital allocation, long-term thinking)
+- **VBC Leader** -- Active in ACO REACH value-based care contracts
 
-**2. The Vision (60 seconds)**
-"We're building the operating system for healthcare practices. AI-native from the ground up. One platform that handles scheduling, documentation, coding, billing, prior auth, and analytics -- with AI doing the heavy lifting and humans handling exceptions. We're giving every practice the operational capability of the Mayo Clinic."
+**Why Theoria is the ideal MedOS customer:**
+Theoria operates exactly the kind of distributed, high-complexity healthcare system that MedOS was built for. Their 24/7 telemedicine model across hundreds of facilities creates data fragmentation, billing leakage, and coordination challenges that only an AI-native OS can solve at scale.
 
-**3. Why Now (30 seconds)**
-"Three things converged: AI models are reliable enough. CMS mandated open APIs, breaking lock-in. And the staffing crisis means practices will pay for automation they'd have resisted three years ago."
+### The Reframed Pitch (10 minutes)
 
-**4. The Plan (90 seconds)**
-"Phase 1: Two of us build core platform in 90 days. Target mid-size specialty practices in Florida. 3-5 free pilots, prove ROI, convert to paid.
-Phase 2: Hire to 10, get SOC 2, scale to 50-100 practices, $5-10M ARR.
-Phase 3: Hire to 50, HITRUST, national expansion, marketplace. $25-40M ARR by month 36."
+**ACT 1: The Recognition (60 seconds)**
+"You didn't just start a practice -- you diagnosed a systemic problem in post-acute care and built a company to fix it. Theoria grew from one SNF to a 21-state enterprise. The question now: how do you go from 21 states to 50 without operational complexity growing linearly?"
 
-**5. Why This Team (30 seconds)**
-"I know how to set up the systems that let a small team move at 5x speed. I'll build the infrastructure, the AI pipeline, the compliance framework. Combined with your healthcare domain expertise and relationships, we can outexecute teams 10x our size."
+**ACT 2: The 4 Pain Points (90 seconds)**
+1. **Data Fragmentation** -- Doctors covering 50+ facilities per shift, switching between PointClickCare and MatrixCare silos
+2. **Revenue Leakage** -- CCM billing (CPT 99490) requires 20+ min tracking per patient per month. At scale, millions left on the table.
+3. **Shift Handoff Risk** -- When the night doctor logs off, how does the next one know about the pending critical potassium at Sunrise SNF?
+4. **PE Reporting Burden** -- Amulet needs readmission rates by state with variance analysis. Currently takes weeks of manual work.
 
-**6. The Ask (15 seconds)**
-"Give me 90 days. I'll build the infrastructure, ship an MVP, and get it in front of real practices. You'll see exactly what I can do."
+**ACT 3: The Live Demo (3-4 minutes)**
+Walk through https://medos-platform.vercel.app: Dashboard → AI Scribe → Claims → Approvals → Admin Hub → Devices → Context Freshness
+Kill line: *"This platform -- 53 routes, 522 tests, 44 AI tools -- was built in 15 days by 2 people."*
+
+**ACT 4: The Theoria Kill Shots (2-3 minutes)**
+1. **Post-Acute Guardian** -- CHF patient gains 3lbs → Agent sends P2 alert to nurse → $20K rehospitalization prevented
+2. **Zero-Touch CCM Revenue** -- Automatic time tracking → CPT 99490 auto-drops → $60-150/patient/month captured
+3. **Shift Handoff** -- Priority-ranked briefing: "Patient Jones, pending potassium 5.8, trending up"
+4. **PE-Ready Reporting** -- Natural language query → 60-second board report with charts and root cause analysis
+
+**ACT 5: The Financial Argument (90 seconds)**
+"Theoria at 10x EBITDA is a physician services company. Theoria + MedOS at 20x EBITDA is a technology platform. On $50M EBITDA, that's $500M in additional enterprise value."
+
+**The Ask:**
+"Give us 90 days. Read-only deployment in one Michigan facility. Zero disruption. If we don't find $500K+ in uncaptured annual revenue, we walk away."
+
+### Detailed Pitch Strategy
+See [[theoria-medical-pitch-strategy]] for full objection handling, pre-meeting checklist, and follow-up plan.
 
 ---
 
@@ -656,55 +682,58 @@ This confirms Claude as our production AI backend. The architecture decision in 
 
 ## CURRENT PROGRESS
 
-> Last updated: 2026-02-28 (Day 3 of development)
+> Last updated: 2026-03-01 (Day 14 of development)
 
 ### What's Built
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| **Knowledge Base** | Complete | 50+ documents, 121K+ words across all healthcare domains |
-| **Backend (FastAPI)** | Sprint 1+ complete | 50+ Python modules, 467+ tests passing, JWT auth, FHIR CRUD, audit logging, PHI filter |
-| **Frontend (Next.js 15)** | Full demo | 22 routes: login, dashboard, patients, appointments, AI notes, claims, approvals, analytics, pilot, docs (5 sub-pages), settings (3 sub-pages) |
+| **Knowledge Base** | Complete | 86+ documents, 150K+ words across all healthcare domains |
+| **Backend (FastAPI)** | Sprint 5 complete | 50+ Python modules, 522+ tests passing, JWT auth, FHIR CRUD, audit logging, PHI filter, field encryption, rate limiting |
+| **Frontend (Next.js 15)** | 53 routes | Login, dashboard, patients, appointments, AI notes, claims, approvals, analytics, pilot, docs (5), settings (6), project, admin hub (13 sections), Theoria pilot (13 pages) |
+| **Admin Hub** | Complete | 13 admin sections across 4 groups (Operations, Practice, Platform, Compliance), 9,732 lines, collapsible sidebar |
 | **AI Scribe (Demo)** | Complete | Interactive 3-stage simulation + MCP tool-based pipeline with confidence scoring |
-| **MCP Layer** | Complete | 4 MCP servers: FHIR (12 tools), Scribe (6 tools), Billing (13 tools), Scheduling (6 tools) = 37 tools |
-| **LangGraph Agents** | 3 implemented | Clinical Scribe, Prior Authorization, Denial Management -- all with bounded autonomy |
-| **Security Pipeline** | Complete | MCP Gateway with auth, PHI policies, rate limiting, credential injection, safety layer, audit trail |
-| **A2A Protocol** | Complete | Full A2A adoption per [[ADR-008-a2a-agent-communication]]: Agent Cards, A2A Gateway, inter-agent tasks, PHI screening, external marketplace |
-| **Approval Workflow** | Complete | Human-in-the-loop review for high-stakes agent actions (claims, PA, appeals) |
-| **E2E Demo** | Complete | 12-ACT Playwright test covering all 22 pages, auto-generates MP4 video |
+| **MCP Layer** | Complete | 6 MCP servers: FHIR (12), Scribe (6), Billing (8), Scheduling (6), Device (8), Context (4) = 44 tools |
+| **LangGraph Agents** | 3 active, 5 designed, 9+ brainstormed | Clinical Scribe, Prior Authorization, Denial Management + Patient Communication, Quality Reporting designed |
+| **Security Pipeline** | Complete | MCP Gateway, field-level encryption (Fernet, per-tenant PBKDF2), PHI filter, rate limiting, HIPAA 94/100 |
+| **A2A Protocol** | Complete | Agent Cards, A2A Gateway, inter-agent tasks, PHI screening, external marketplace |
+| **Approval Workflow** | Complete | Human-in-the-loop review for high-stakes agent actions |
+| **Device Integration** | Complete | Device MCP Server (8 tools), Oura Ring, Apple Watch, Dexcom CGM, FHIR Observation mapping |
+| **Context Rehydration** | Complete | Event-driven refresh (17 change types, 13 context types), freshness scoring, tiered cache |
+| **E2E Demo** | Complete | 15-ACT Playwright test covering all 53 pages, auto-generates MP4 video |
 | **CI/CD** | Configured | GitHub Actions with lint, test, security scan, Docker build |
-| **Deployment** | Live | Frontend on Vercel (https://medos-platform.vercel.app), backend Docker-ready |
-| **Architecture Docs** | Complete | 8 ADRs, Terraform module plan (9 modules), AI agent architecture (5 agents), MCP integration plan, A2A protocol reference |
-| **Device Integration** | Complete | Device MCP Server (8 tools), wearable support (Oura Ring, Apple Watch, Dexcom), ADR-007 |
-| **Context Rehydration** | Complete | Event-driven context refresh (17 change types, 13 context types), freshness monitoring (exponential decay scoring), tiered cache (hot/warm/cold), ADR-006 |
-| **Platform Admin (Phase 1)** | In progress | Device Management, Context Freshness Dashboard, System Health — as Settings sub-pages ([[EPIC-014-admin-system-monitoring]]) |
+| **Deployment** | Live | Frontend on Vercel, backend Docker-ready |
+| **Architecture** | Complete | 8 ADRs, 16 EPICs, Terraform module plan, agent architecture, MCP plan, A2A reference |
 
 ### Sprint Status
 
 | Sprint | Phase | Status |
 |--------|-------|--------|
-| **Day 0** | Research & Architecture | Complete -- 121K+ words of research |
-| **Day 1-2** | Platform scaffold + Frontend demo | Complete -- full demo with 22 routes |
-| **Sprint 1** | Agentic API + MCP Layer | Complete -- 4 MCP servers, 37 tools, 3 agents, security pipeline |
-| **Sprint 2** | Billing + Scheduling + Agents | Complete -- Billing (13 tools), Scheduling (6 tools), Prior Auth agent, Denial Mgmt agent |
-| **Sprint 2.5** | Device Integration + Context Rehydration | Complete -- Device MCP (8 tools), Context Engine (17 events, 13 contexts), Freshness Monitor, Context MCP (4 tools), ADR-006/007/008, 522 tests |
-| **Sprint 3** | Frontend Pages + Admin Phase 1 | In progress -- Device Management, Context Freshness Dashboard, System Health pages under Settings |
-| **Sprint 0** | AWS Infrastructure (Terraform) | Planned -- [[terraform-module-plan]] ready, estimated $402/mo dev |
-| **Sprint 3-4** | Revenue Cycle MVP | Planned |
-| **Sprint 5-6** | Pilot Readiness | Planned |
+| **S0** | Foundation (AWS, CI/CD, Auth, DB, FastAPI, FHIR CRUD) | Complete |
+| **S1** | FHIR resources, patient matching, event bus | Complete |
+| **S2** | MCP SDK refactoring, 32 tools, 3 agents, HIPAAFastMCP | Complete |
+| **S2.5** | Device MCP (8 tools), Context Rehydration, Freshness Monitor | Complete (522 tests) |
+| **S3** | Demo polish: Approvals UI, WebSocket, agent runner, intake | Complete |
+| **S3F** | Frontend: Settings pages, Project Tracker, Admin Hub (13 sections) | Complete (40 routes, 0 TS errors) |
+| **S4** | Revenue cycle: X12 837P, scrubbing, 835 parser, PA, denials, analytics | Complete |
+| **S5** | Security: field encryption, tenant onboarding, EHR bridge, monitoring | Complete |
+| **S6** | Launch: Terraform, demo data, pilot metrics, runbooks | In progress |
+| **S4F** | Theoria Medical Pilot Sprint: 13 new pages (4 domains), 7 agents designed | Complete (53 routes, 0 TS errors) |
 
 ### Key Metrics
 
-- **25+** frontend routes (22 existing + 3 new Settings sub-pages), 0 TypeScript errors
+- **53** frontend routes, 0 TypeScript errors
 - **522+** backend tests, all passing, ruff clean
-- **44** MCP tools across 6 servers: FHIR (12), Scribe (6), Billing (8), Scheduling (6), Device (8), Context (4)
-- **3** LangGraph agents (Clinical Scribe, Prior Auth, Denial Management)
-- **8** Architecture Decision Records (ADR-001 through ADR-008)
-- **14** EPICs (EPIC-001 through EPIC-014)
-- **65+** knowledge base documents (121K+ words)
+- **44** MCP tools across 6 servers
+- **3** LangGraph agents active (5 designed, 9+ brainstormed)
+- **9,732** lines of admin hub code built in a single night (4 parallel AI agents)
+- **8** Architecture Decision Records
+- **16** EPICs (EPIC-001 through EPIC-016)
+- **86+** knowledge base documents
+- **15-ACT** E2E demo covering every route (including Theoria pilot)
 - **$402/mo** estimated dev environment cost (AWS)
 - **$3,508/mo** estimated production cost (AWS)
-- **5** AI agents fully specified with bounded autonomy framework
+- **14 days** total development time (2-person team + AI tools)
 
 ### Live Demo
 
@@ -715,6 +744,8 @@ This confirms Claude as our production AI backend. The architecture decision in 
 
 ### Documentation Index
 
+- [[theoria-medical-pitch-strategy]] -- Pitch strategy for Dr. Di Rezze meeting
+- [[EPIC-016-theoria-medical-pilot]] -- Theoria Medical pilot sprint (10 pages, 4 agents)
 - [[demo-script-monday]] -- Demo walkthrough for Monday meeting
 - [[terraform-module-plan]] -- 9 AWS Terraform modules with cost estimates
 - [[agent-architecture]] -- 5 AI agents with bounded autonomy framework
@@ -723,11 +754,102 @@ This confirms Claude as our production AI backend. The architecture decision in 
 - [[MOC-Agent-Architecture]] -- Agent documentation index
 - [[ADR-006-patient-context-rehydration]] -- System-wide context rehydration architecture
 - [[ADR-007-wearable-iot-integration]] -- Wearable/IoT device integration
-- [[EPIC-008-device-integration]] -- Wearable & IoT device integration epic
-- [[EPIC-009-context-rehydration]] -- Context rehydration & freshness monitoring epic
 - [[ADR-008-a2a-agent-communication]] -- A2A protocol adoption for inter-agent communication
 - [[a2a-protocol-reference]] -- A2A protocol reference and MedOS integration guide
-- [[EPIC-014-admin-system-monitoring]] -- Admin Phase 1: Device Management, Context Freshness, System Health pages
+- [[EPIC-014-admin-system-monitoring]] -- Admin Phase 1 (Settings sub-pages)
+- [[EPIC-015-admin-hub]] -- Admin Hub Phase 2 (13 sections, 9,732 lines)
+
+---
+
+## 16. STRATEGIC OPPORTUNITY: THEORIA MEDICAL & POST-ACUTE CARE
+
+### The Thesis
+
+Theoria Medical represents a transformative partnership opportunity. Dr. Di Rezze has built the clinical model (24/7 telemedicine across 21 states); MedOS provides the technology platform to take it national. This is not a customer sale -- it's a platform adoption that fundamentally changes Theoria's category from physician services (8-12x EBITDA) to tech-enabled platform (15-25x EBITDA).
+
+### What MedOS Brings to Theoria
+
+| Theoria Pain Point | MedOS Solution | ADR/Module |
+|-------------------|----------------|------------|
+| Multi-facility data fragmentation | FHIR-native data lake + Context Rehydration | [[ADR-001]], [[ADR-006]] |
+| CCM/RPM revenue leakage ($60-150/patient/month) | CCM Revenue Agent + EventBridge time tracking | Module C, New Agent |
+| 24/7 shift handoff risk | Shift Summary Agent (priority-ranked briefings) | Module B, New Agent |
+| Rehospitalization penalties (ACO REACH) | Post-Acute Guardian Agent (wearable monitoring) | [[ADR-007]], New Agent |
+| PE reporting burden (Amulet Capital) | PE-Readiness Agent + Executive Dashboard | Module E, New Agent |
+| M&A integration speed | Schema-per-tenant + automated tenant provisioning | [[ADR-002]] |
+| Clinician administrative burden | AI Scribe + Prior Auth Agent + Denial Management Agent | [[ADR-003]] |
+| Care gap detection at scale | Quality Reporting Agent + ACO REACH measures | Module E |
+
+### The M&A Flywheel
+
+MedOS enables Theoria to become the **acquirer of choice** in post-acute care:
+- **Current integration timeline:** 6-12 months per acquired facility
+- **With MedOS:** 60-90 days (automated tenant provisioning, FHIR data ingestion, standardized workflows)
+- **Result:** 3-4x more acquisitions per year with lower integration cost
+
+A "Diligence Agent" can analyze a target practice's anonymized claims data and predict revenue lift, cost savings, and clinical outcome improvements -- giving Theoria a data-driven edge in deal sourcing.
+
+### The Financial Case
+
+| Metric | Without MedOS | With MedOS |
+|--------|--------------|------------|
+| Valuation multiple | 8-12x EBITDA | 15-25x EBITDA |
+| CCM revenue capture | Manual, ~40% capture rate | Automated, ~90% capture rate |
+| M&A integration time | 6-12 months | 60-90 days |
+| Readmission penalty exposure | Reactive | Predictive (wearable monitoring) |
+| PE reporting turnaround | Weeks (manual) | Minutes (AI agent) |
+
+**If Theoria's EBITDA is $50M:** The difference between 10x and 20x is **$500M in enterprise value**. MedOS is the bridge.
+
+### 90-Day Pilot Roadmap for Theoria
+
+See [[EPIC-016-theoria-medical-pilot]] for full technical plan and [[theoria-medical-pitch-strategy]] for pitch preparation.
+
+**Phase 1 (Days 1-30):** Read-only data connection to one Michigan facility. Shadow operations. Deliver VBC Opportunity Report.
+**Phase 2 (Days 31-60):** Deploy Post-Acute Guardian for 50-100 high-risk patients with wearables. Weekly outcome reports vs control group.
+**Phase 3 (Days 61-90):** Turn on CCM Revenue Agent + ACO REACH Quality Agent with human approval dashboard. Full ROI analysis.
+
+### Critical Positioning: MedOS + Theoria's Existing Tech
+
+Theoria is the "only physician group in the country that creates its own technology in-house" — they have:
+- **ChartEasy** -- Specialized EHR for long-term care
+- **ChatEasy** -- Secure messaging for clinical decision support
+- **ProphEasy** -- Clinical decision support and analytics
+
+**MedOS does NOT replace these tools.** MedOS is the AI-native infrastructure layer underneath:
+- ChartEasy stores data → MedOS normalizes to FHIR + adds pgvector semantic search + enables AI agents
+- ChatEasy handles messaging → MedOS adds A2A agent-to-agent coordination
+- ProphEasy does analytics → MedOS adds predictive AI agents with bounded autonomy
+
+### New Agent Architecture (7 additions)
+
+See [[EPIC-016-theoria-medical-pilot]] for detailed agent specifications.
+
+1. **Post-Acute Guardian Agent** -- Continuous wearable monitoring for CHF/post-discharge patients
+2. **CCM Revenue Agent** -- Automatic non-face-to-face time tracking and CPT 99490 billing
+3. **Shift Summary Agent** -- Priority-ranked briefings during telemedicine shift handoffs
+4. **ACO REACH Quality Agent** -- Proactive care gap closure for VBC quality scores
+5. **SNF-to-Hospital Semantic Data Bridge** -- NLP on discharge summaries, semantic reconciliation (solves Dr. Di Rezze's founding insight)
+6. **Generative Care Plan Optimizer** -- AI "super-consultant" scaling clinical expertise network-wide
+7. **Dynamic Staffing & Resource Allocation Agent** -- Optimizes hybrid workforce across national footprint (addresses Amulet's margin expansion mandate)
+
+### New Frontend Pages (13 additions)
+
+| Page | Route | Purpose |
+|------|-------|---------|
+| Facility Console | `/facility` | SNF-level dashboard for Director of Nursing |
+| Shift Handoff | `/shift-handoff` | Priority briefings for telemedicine shifts |
+| Post-Acute Guardian | `/guardian` | Live wearable monitoring + alert queue |
+| Readmission Risk | `/readmission` | Predictive scoring + interventions |
+| CCM Time Tracker | `/ccm` | 20-minute threshold tracking per patient |
+| RPM Revenue | `/rpm` | CPT 99453-99458 auto-capture |
+| Care Gap Scanner | `/care-gaps` | Population care gap detection + outreach |
+| ACO REACH | `/aco-reach` | Quality measure performance (Empassion Health metrics) |
+| PE Executive | `/executive` | Board-level KPIs for Amulet Capital ($2.7B AUM) |
+| Credentialing | `/credentialing` | Multi-state licensing management (21 states) |
+| Discharge Reconciliation | `/discharge` | Hospital→SNF semantic data bridge |
+| Care Plan Optimizer | `/care-plans` | AI clinical recommendations with evidence citations |
+| Staffing Optimizer | `/staffing` | Dynamic provider scheduling across facilities |
 
 ---
 

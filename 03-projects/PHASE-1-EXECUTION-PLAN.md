@@ -698,8 +698,9 @@ W13    | Prod deploy, demo env, backups     | Pilot onboarding, training
 | S5 | 12 | 6 | 5 | 1 | ~54h |
 | S6 | 9 | 4 | 4 | 1 | ~33h |
 | S2.5 | 8 | 4 | 4 | 0 | ~28h |
-| S3F | 10 | 8 | 1 | 1 | ~23h |
-| **Total** | **141** | **78** | **53** | **10** | **~513h** |
+| S3F | 17 | 17 | 0 | 0 | ~40h |
+| S4F | 18 | 0 | 0 | 18 | ~55h |
+| **Total** | **159** | **95** | **46** | **18** | **~568h** |
 
 At 8h/day per person, 10 days/sprint = 160h/sprint for the team. Each sprint uses 30-80% of available capacity, leaving buffer for unexpected issues, debugging, meetings, and pilot relationship management.
 
@@ -723,6 +724,8 @@ At 8h/day per person, 10 days/sprint = 160h/sprint for the team. Each sprint use
 | [[EPIC-012-device-integration]] | S2.5 | S3F (frontend page) |
 | [[EPIC-013-context-rehydration]] | S2.5 | S3F (frontend dashboard) |
 | [[EPIC-014-admin-system-monitoring]] | S3F | S2.5 (backend modules) |
+| [[EPIC-015-admin-hub]] | S3F | S3F Phase 2 (13 admin sections, 9,732 lines) |
+| [[EPIC-016-theoria-medical-pilot]] | S4F | Theoria Medical pilot sprint (13 pages, 7 agents designed) | Complete |
 
 ---
 
