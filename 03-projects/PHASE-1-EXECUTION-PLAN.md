@@ -396,12 +396,12 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 | S4-T10 | Build AI underpayment detector: compare remittance amounts against contracted rates, flag underpayments | A | 4h | S3-T09 | Underpayments flagged with expected vs actual amount and variance | pending |
 | S4-T11 | Implement FHIR ClaimResponse and ExplanationOfBenefit resources for tracking claim outcomes | A | 3h | S3-T08 | Claim outcomes stored as FHIR resources, searchable by status/date/payer | pending |
 | S4-T12 | Sprint 4 end-to-end test: encounter -> PA required -> submit PA -> approved -> claim -> ERA -> analytics | BOTH | 4h | ALL | Full revenue cycle with PA works end-to-end, analytics reflect data | pending |
-| S4-T13 | X12 837P Claims Generator: generate HIPAA-compliant 005010X222A1 professional claims from FHIR Claim resources | A | 6h | -- | 837P output valid, all required segments populated, batch mode works | in-progress |
-| S4-T14 | Claims Scrubbing Rules Engine: pre-submission validation with 15+ rules, denial risk scoring | A | 4h | S4-T13 | 15+ rules implemented, denial risk score calculated, error-level blocks submission | in-progress |
-| S4-T15 | X12 835 Remittance Parser: parse ERA files into structured payment, adjustment, and patient responsibility data | A | 4h | -- | Parser handles 005010X221A1, extracts CLP/CAS/SVC/PLB segments | in-progress |
-| S4-T16 | Payment Posting Module: match 835 payments to claims, calculate patient responsibility, detect underpayments | A | 3h | S4-T15 | Payments matched, claim status updated, FHIR ExplanationOfBenefit created | pending |
-| S4-T17 | Claims Pipeline MCP Tools: 4 new billing tools (generate, scrub, post, analytics) | A | 4h | S4-T13, S4-T14, S4-T15, S4-T16 | 4 tools registered via @hipaa_tool, total 36 MCP tools | pending |
-| S4-T18 | Claims Analytics Frontend: dashboard with clean claim rate, denial breakdown, AR aging | B | 4h | S4-T13, S4-T14, S4-T16 | Charts rendered, filters working, no PHI on analytics page | pending |
+| S4-T13 | X12 837P Claims Generator: generate HIPAA-compliant 005010X222A1 professional claims from FHIR Claim resources | A | 6h | -- | 837P output valid, all required segments populated, batch mode works | done |
+| S4-T14 | Claims Scrubbing Rules Engine: pre-submission validation with 18 rules, denial risk scoring | A | 4h | S4-T13 | 18 rules implemented, denial risk score calculated, error-level blocks submission | done |
+| S4-T15 | X12 835 Remittance Parser: parse ERA files into structured payment, adjustment, and patient responsibility data | A | 4h | -- | Parser handles 005010X221A1, extracts CLP/CAS/SVC/PLB segments | done |
+| S4-T16 | Payment Posting Module: match 835 payments to claims, calculate patient responsibility, detect underpayments | A | 3h | S4-T15 | Payments matched, claim status updated, balance calculated | done |
+| S4-T17 | Claims Pipeline MCP Tools: 4 new billing tools (generate, scrub, post, analytics) | A | 4h | S4-T13, S4-T14, S4-T15, S4-T16 | 4 tools registered via @hipaa_tool, total 36 MCP tools | done |
+| S4-T18 | Claims Analytics Frontend: dashboard with clean claim rate, denial breakdown, AR aging | B | 4h | S4-T13, S4-T14, S4-T16 | GaugeRing KPIs, financial summary, AR aging, top denial reasons | done |
 
 ### Sprint 4 Deliverables
 - Prior auth automation (X12 278 request/response)
