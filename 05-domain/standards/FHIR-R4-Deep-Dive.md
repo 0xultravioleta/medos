@@ -1537,6 +1537,586 @@ Da Vinci is a private-sector initiative creating payer-focused FHIR IGs. Critica
 
 ---
 
+## 11. Additional Resources for Theoria Medical Agents
+
+The following FHIR R4 resources are required by the Theoria Medical-specific agents (Agents 5-11). These extend the core resource set documented in Section 2 with resources critical for post-acute care, device integration, chronic care management, and multi-facility operations. See [[LangGraph-Agent-Implementation]] for how each agent consumes these resources.
+
+---
+
+### 11.1 CarePlan
+
+**What it represents:** A plan that describes the intention of how one or more practitioners intend to deliver care for a particular patient, group, or community for a period of time, possibly limited to care for a specific condition or set of conditions.
+
+**When we use it:** CCM billing (CPT 99490 requires an active care plan on file), care plan optimization, post-acute care coordination, quality measure compliance. The CCM Revenue Agent (Agent 6) checks for an active CarePlan before generating claims. The Generative Care Plan Optimizer (Agent 10) reads and updates CarePlans with AI-generated recommendations.
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | code | `draft \| active \| on-hold \| revoked \| completed \| entered-in-error \| unknown` |
+| `intent` | code | `proposal \| plan \| order \| option` |
+| `category[]` | CodeableConcept | Type of plan: CCM, RPM, general, assess-plan. Uses `http://hl7.org/fhir/us/core/CodeSystem/careplan-category` |
+| `title` | string | Human-readable name for the care plan |
+| `description` | string | Summary of nature of plan |
+| `subject` | Reference(Patient) | Who the care plan is for |
+| `encounter` | Reference(Encounter) | Encounter created during |
+| `period` | Period | Time period plan covers (start/end) |
+| `created` | dateTime | Date care plan was first created |
+| `author` | Reference(Practitioner) | Who is responsible for plan |
+| `careTeam[]` | Reference(CareTeam) | Who is involved in plan execution |
+| `activity[]` | BackboneElement | Planned actions (detail below) |
+| `activity.detail.status` | code | `not-started \| scheduled \| in-progress \| on-hold \| completed \| cancelled` |
+| `activity.detail.code` | CodeableConcept | What activity (SNOMED CT) |
+| `activity.detail.scheduledPeriod` | Period | When activity is to occur |
+| `activity.detail.description` | string | Extra detail for activity |
+
+**Example JSON (Theoria-specific: CHF patient at Sunrise Senior Living, Troy MI):**
+
+```json
+{
+  "resourceType": "CarePlan",
+  "id": "cp-chf-mgmt-001",
+  "status": "active",
+  "intent": "plan",
+  "category": [
+    {
+      "coding": [
+        {
+          "system": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category",
+          "code": "assess-plan",
+          "display": "Assessment and Plan of Treatment"
+        }
+      ]
+    },
+    {
+      "coding": [
+        {
+          "system": "https://medos.health/fhir/CodeSystem/care-plan-type",
+          "code": "ccm",
+          "display": "Chronic Care Management"
+        }
+      ]
+    }
+  ],
+  "title": "CHF Management Plan - Chronic Care Management",
+  "description": "Comprehensive CCM plan for CHF NYHA Class II management with daily weight monitoring, medication titration, and dietary counseling",
+  "subject": {"reference": "Patient/pat-snf-001"},
+  "period": {
+    "start": "2026-02-01",
+    "end": "2026-07-31"
+  },
+  "created": "2026-02-01T10:00:00-05:00",
+  "author": {"reference": "Practitioner/dr-johnson", "display": "Dr. Sarah Johnson, MD"},
+  "careTeam": [{"reference": "CareTeam/ct-snf-001"}],
+  "activity": [
+    {
+      "detail": {
+        "status": "in-progress",
+        "code": {
+          "coding": [{"system": "http://snomed.info/sct", "code": "698358001", "display": "Weight monitoring"}]
+        },
+        "description": "Daily weight measurement via Withings Body+ scale. Alert if >2 lbs gain in 24h or >3 lbs in 48h.",
+        "scheduledPeriod": {"start": "2026-02-01", "end": "2026-07-31"}
+      }
+    },
+    {
+      "detail": {
+        "status": "scheduled",
+        "code": {
+          "coding": [{"system": "http://snomed.info/sct", "code": "430193006", "display": "Medication reconciliation"}]
+        },
+        "description": "Monthly medication reconciliation with pharmacy review",
+        "scheduledPeriod": {"start": "2026-03-01"}
+      }
+    },
+    {
+      "detail": {
+        "status": "in-progress",
+        "code": {
+          "coding": [{"system": "http://snomed.info/sct", "code": "385763009", "display": "Dietary advice"}]
+        },
+        "description": "Low-sodium diet (<2g/day). Weekly dietary counseling by care coordinator.",
+        "scheduledPeriod": {"start": "2026-02-01", "end": "2026-07-31"}
+      }
+    }
+  ]
+}
+```
+
+**MedOS extensions:**
+
+| Extension URL | Type | Description |
+|--------------|------|-------------|
+| `https://medos.health/fhir/ext/ccm-minutes-tracked` | integer | Total CCM minutes tracked against this care plan in current billing period |
+| `https://medos.health/fhir/ext/ccm-billing-status` | code | `tracking \| threshold-crossed \| billed \| not-eligible` |
+| `https://medos.health/fhir/ext/rpm-devices` | Reference(Device)[] | RPM devices associated with this care plan |
+
+---
+
+### 11.2 Device
+
+**What it represents:** A medical device, including wearables and remote patient monitoring (RPM) equipment. In Theoria's context, this primarily covers consumer wearables (Oura Ring, Apple Watch, Withings scales) and clinical-grade RPM devices (pulse oximeters, glucose monitors) assigned to post-acute patients.
+
+**When we use it:** RPM device registration, linking device readings (Observations) to their source device, RPM billing eligibility (CPT 99457/99458 requires registered devices), and the Post-Acute Guardian Agent (Agent 5) device data pipeline. See [[ADR-007-wearable-iot-integration]] for the device integration architecture.
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `identifier[]` | Identifier | Device serial number, manufacturer ID |
+| `status` | code | `active \| inactive \| entered-in-error \| unknown` |
+| `type` | CodeableConcept | Kind of device (SNOMED CT or IEEE 11073) |
+| `manufacturer` | string | Device manufacturer name |
+| `model` | string | Device model identifier |
+| `serialNumber` | string | Unique serial number |
+| `patient` | Reference(Patient) | Patient this device is assigned to |
+| `owner` | Reference(Organization) | Organization responsible for device |
+| `location` | Reference(Location) | Facility where device is primarily used |
+| `contact[]` | ContactPoint | Device connectivity info |
+| `note[]` | Annotation | Notes about device assignment |
+
+**Example JSON (Theoria-specific: Oura Ring assigned to SNF patient):**
+
+```json
+{
+  "resourceType": "Device",
+  "id": "dev-oura-ring-001",
+  "identifier": [
+    {
+      "system": "https://ouraring.com/devices",
+      "value": "OURA-GEN3-SN-4829173"
+    },
+    {
+      "system": "https://medos.health/fhir/device-id",
+      "value": "medos-dev-001"
+    }
+  ],
+  "status": "active",
+  "type": {
+    "coding": [
+      {
+        "system": "http://snomed.info/sct",
+        "code": "706767009",
+        "display": "Patient monitoring device"
+      },
+      {
+        "system": "https://medos.health/fhir/CodeSystem/device-type",
+        "code": "wearable-ring",
+        "display": "Wearable Ring Monitor"
+      }
+    ]
+  },
+  "manufacturer": "Oura Health Oy",
+  "model": "Oura Ring Gen 3 Heritage",
+  "serialNumber": "OURA-GEN3-SN-4829173",
+  "patient": {"reference": "Patient/pat-snf-001"},
+  "owner": {"reference": "Organization/org-theoria-mi"},
+  "location": {"reference": "Location/loc-sunrise-troy"},
+  "note": [
+    {
+      "text": "Assigned 2026-02-15. Primary use: sleep quality, HRV, SpO2 monitoring for CHF patient. Size 9.",
+      "time": "2026-02-15T09:00:00-05:00"
+    }
+  ]
+}
+```
+
+**MedOS extensions:**
+
+| Extension URL | Type | Description |
+|--------------|------|-------------|
+| `https://medos.health/fhir/ext/device-integration-status` | code | `connected \| pairing \| offline \| error` |
+| `https://medos.health/fhir/ext/last-sync` | dateTime | Last successful data sync timestamp |
+| `https://medos.health/fhir/ext/rpm-billing-eligible` | boolean | Whether this device qualifies for RPM billing |
+| `https://medos.health/fhir/ext/alert-thresholds` | complex | Patient-specific alert thresholds (e.g., weight gain > 3 lbs/48h) |
+
+---
+
+### 11.3 DeviceMetric
+
+**What it represents:** Describes a measurement, calculation, or setting capability of a medical device. Links the Device to the types of Observations it can produce.
+
+**When we use it:** The Post-Acute Guardian Agent (Agent 5) uses DeviceMetric to understand what a device can measure and validate incoming readings. Also used by the Device MCP Server to route observations correctly.
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | CodeableConcept | What the device measures (LOINC or IEEE 11073) |
+| `source` | Reference(Device) | The device this metric belongs to |
+| `category` | code | `measurement \| setting \| calculation \| unspecified` |
+| `unit` | CodeableConcept | Unit of measurement (UCUM) |
+| `operationalStatus` | code | `on \| off \| standby \| entered-in-error` |
+| `measurementPeriod` | Timing | How often the metric is measured |
+
+**Example JSON (Theoria-specific: Oura Ring heart rate metric):**
+
+```json
+{
+  "resourceType": "DeviceMetric",
+  "id": "dm-oura-hr-001",
+  "type": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "8867-4",
+        "display": "Heart rate"
+      }
+    ]
+  },
+  "source": {"reference": "Device/dev-oura-ring-001"},
+  "category": "measurement",
+  "unit": {
+    "coding": [
+      {
+        "system": "http://unitsofmeasure.org",
+        "code": "/min",
+        "display": "beats per minute"
+      }
+    ]
+  },
+  "operationalStatus": {
+    "coding": [
+      {
+        "system": "http://hl7.org/fhir/metric-operational-status",
+        "code": "on"
+      }
+    ]
+  },
+  "measurementPeriod": {
+    "repeat": {
+      "frequency": 1,
+      "period": 5,
+      "periodUnit": "min"
+    }
+  }
+}
+```
+
+Additional DeviceMetric instances for the Oura Ring include SpO2 (`2708-6`), HRV (`80404-7`), body temperature (`8310-5`), and sleep quality (MedOS custom code). The Withings Body+ scale produces weight (`29463-7`) and body composition metrics.
+
+---
+
+### 11.4 Communication
+
+**What it represents:** A record of a clinical or administrative communication between healthcare participants. Covers phone calls, secure messages, chat interactions, care coordination conversations, and any async clinician-patient exchange.
+
+**When we use it:** CCM time tracking (the CCM Revenue Agent, Agent 6, logs every qualifying interaction as a Communication resource to track billable minutes), care gap outreach (the ACO Quality Agent, Agent 8, triggers outreach via the Patient Communication Agent), and shift handoff documentation (Agent 7 records handoffs as Communication resources for audit trail).
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | code | `preparation \| in-progress \| not-done \| on-hold \| stopped \| completed \| entered-in-error \| unknown` |
+| `category[]` | CodeableConcept | Type: CCM, RPM, general, care-coordination |
+| `medium` | CodeableConcept | Channel: phone, sms, chat, email, in-person |
+| `sent` | dateTime | When the communication was sent |
+| `received` | dateTime | When received (if applicable) |
+| `sender` | Reference(Practitioner\|Patient\|Device) | Who sent it |
+| `recipient[]` | Reference(Practitioner\|Patient\|CareTeam) | Who received it |
+| `payload[]` | BackboneElement | Message content |
+| `payload.contentString` | string | Text content of message |
+| `reasonReference[]` | Reference(Condition) | Why this communication occurred |
+| `topic` | CodeableConcept | Communication topic |
+| `encounter` | Reference(Encounter) | Related encounter |
+
+**Example JSON (Theoria-specific: CCM phone call with SNF patient's daughter):**
+
+```json
+{
+  "resourceType": "Communication",
+  "id": "comm-ccm-001",
+  "status": "completed",
+  "category": [
+    {
+      "coding": [
+        {
+          "system": "https://medos.health/fhir/CodeSystem/communication-category",
+          "code": "ccm",
+          "display": "Chronic Care Management"
+        }
+      ]
+    }
+  ],
+  "medium": {
+    "coding": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationMode",
+        "code": "PHONE",
+        "display": "Telephone"
+      }
+    ]
+  },
+  "sent": "2026-02-28T14:30:00-05:00",
+  "sender": {"reference": "Practitioner/rn-martinez", "display": "Maria Martinez, RN"},
+  "recipient": [
+    {"reference": "Patient/pat-snf-001", "display": "Patient (via daughter, healthcare proxy)"}
+  ],
+  "payload": [
+    {
+      "contentString": "Discussed medication adherence with patient's daughter (healthcare proxy). Reviewed daily weight tracking protocol. Confirmed patient is using Withings scale daily. Discussed low-sodium diet compliance -- daughter reports patient is following 2g/day restriction. Reviewed upcoming cardiology follow-up on 03/15."
+    }
+  ],
+  "reasonReference": [
+    {"reference": "Condition/cond-chf-001", "display": "Congestive heart failure, NYHA Class II"}
+  ],
+  "extension": [
+    {
+      "url": "https://medos.health/fhir/ext/ccm-duration-minutes",
+      "valueInteger": 12
+    },
+    {
+      "url": "https://medos.health/fhir/ext/ccm-billable",
+      "valueBoolean": true
+    }
+  ]
+}
+```
+
+**MedOS extensions:**
+
+| Extension URL | Type | Description |
+|--------------|------|-------------|
+| `https://medos.health/fhir/ext/ccm-duration-minutes` | integer | Duration of CCM-qualifying activity in minutes |
+| `https://medos.health/fhir/ext/ccm-billable` | boolean | Whether this activity qualifies for CCM billing |
+| `https://medos.health/fhir/ext/agent-generated` | boolean | Whether this communication was generated or logged by an AI agent |
+| `https://medos.health/fhir/ext/shift-handoff-id` | string | Shift handoff reference (for handoff communications) |
+
+---
+
+### 11.5 CareTeam
+
+**What it represents:** A group of practitioners and organizations participating in the coordinated care of a patient. In Theoria's model, a CareTeam often spans multiple facilities and includes physicians, NPs, RNs, pharmacists, therapists, and social workers.
+
+**When we use it:** Shift Summary Agent (Agent 7) identifies which providers need to be included in handoff briefings. Staffing Optimizer (Agent 11) manages provider-facility-patient team assignments. The A2A protocol uses CareTeam to route inter-agent notifications to the correct human recipients.
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | code | `proposed \| active \| suspended \| inactive \| entered-in-error` |
+| `name` | string | Human-readable team name |
+| `category[]` | CodeableConcept | Type: episode, condition, clinical-research, longitudinal |
+| `subject` | Reference(Patient) | Patient this care team serves |
+| `encounter` | Reference(Encounter) | Encounter establishing the team |
+| `period` | Period | Time period team is active |
+| `participant[]` | BackboneElement | Team members (detail below) |
+| `participant.role[]` | CodeableConcept | Role of team member |
+| `participant.member` | Reference(Practitioner\|Organization\|CareTeam\|Patient) | Team member |
+| `participant.period` | Period | When member was active on team |
+| `managingOrganization[]` | Reference(Organization) | Organization managing team |
+| `telecom[]` | ContactPoint | Team contact points |
+| `note[]` | Annotation | Notes about the team |
+
+**Example JSON (Theoria-specific: care team for SNF patient at Sunrise Senior Living):**
+
+```json
+{
+  "resourceType": "CareTeam",
+  "id": "ct-snf-001",
+  "status": "active",
+  "name": "Sunrise Troy - Room 214 Care Team",
+  "category": [
+    {
+      "coding": [
+        {
+          "system": "http://loinc.org",
+          "code": "LA28865-6",
+          "display": "Longitudinal care-coordination focused care team"
+        }
+      ]
+    }
+  ],
+  "subject": {"reference": "Patient/pat-snf-001"},
+  "period": {"start": "2026-01-15"},
+  "participant": [
+    {
+      "role": [
+        {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "446050000",
+              "display": "Primary care physician"
+            }
+          ]
+        }
+      ],
+      "member": {"reference": "Practitioner/dr-johnson", "display": "Dr. Sarah Johnson, MD"},
+      "period": {"start": "2026-01-15"}
+    },
+    {
+      "role": [
+        {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "224535009",
+              "display": "Registered nurse"
+            }
+          ]
+        }
+      ],
+      "member": {"reference": "Practitioner/rn-martinez", "display": "Maria Martinez, RN"},
+      "period": {"start": "2026-01-15"}
+    },
+    {
+      "role": [
+        {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "46255001",
+              "display": "Pharmacist"
+            }
+          ]
+        }
+      ],
+      "member": {"reference": "Practitioner/pharmd-chen", "display": "David Chen, PharmD"},
+      "period": {"start": "2026-02-01"}
+    },
+    {
+      "role": [
+        {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "36682004",
+              "display": "Physical therapist"
+            }
+          ]
+        }
+      ],
+      "member": {"reference": "Practitioner/pt-williams", "display": "Jennifer Williams, PT"},
+      "period": {"start": "2026-01-20"}
+    }
+  ],
+  "managingOrganization": [
+    {"reference": "Organization/org-theoria-mi", "display": "Theoria Medical - Michigan"}
+  ]
+}
+```
+
+---
+
+### 11.6 Location
+
+**What it represents:** A physical place where healthcare services are provided. For Theoria, this maps to individual SNFs, ALFs, and hospital facilities across 21 states. Location is critical for multi-facility operations: the Staffing Optimizer (Agent 11) uses Location data for travel time calculations, and every Theoria agent scopes its operations by facility.
+
+**When we use it:** Multi-facility scoping for all Theoria agents, travel time optimization for staffing (Agent 11), census tracking per facility, regulatory compliance (state-specific staffing ratios), and NPI-based facility identification for billing.
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `identifier[]` | Identifier | NPI, state license number, CMS Certification Number (CCN) |
+| `status` | code | `active \| suspended \| inactive` |
+| `name` | string | Facility name |
+| `description` | string | Additional details about location |
+| `type[]` | CodeableConcept | Type of facility (SNF, ALF, hospital, clinic) |
+| `mode` | code | `instance \| kind` |
+| `telecom[]` | ContactPoint | Phone, fax, email |
+| `address` | Address | Physical address |
+| `position` | BackboneElement | GPS coordinates (latitude/longitude) |
+| `position.latitude` | decimal | Latitude |
+| `position.longitude` | decimal | Longitude |
+| `managingOrganization` | Reference(Organization) | Organization managing this facility |
+| `physicalType` | CodeableConcept | Physical form (building, room, wing) |
+
+**Example JSON (Theoria-specific: SNF facility in Troy, Michigan):**
+
+```json
+{
+  "resourceType": "Location",
+  "id": "loc-sunrise-troy",
+  "identifier": [
+    {
+      "system": "http://hl7.org/fhir/sid/us-npi",
+      "value": "1234567890"
+    },
+    {
+      "system": "https://www.cms.gov/Medicare/Provider-Enrollment-and-Certification",
+      "value": "235012"
+    }
+  ],
+  "status": "active",
+  "name": "Sunrise Senior Living - Troy",
+  "description": "120-bed skilled nursing facility with memory care unit. Theoria Medical managed since 2024.",
+  "type": [
+    {
+      "coding": [
+        {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+          "code": "SNF",
+          "display": "Skilled Nursing Facility"
+        }
+      ]
+    }
+  ],
+  "mode": "instance",
+  "telecom": [
+    {
+      "system": "phone",
+      "value": "+1-248-555-0100",
+      "use": "work"
+    },
+    {
+      "system": "fax",
+      "value": "+1-248-555-0101",
+      "use": "work"
+    }
+  ],
+  "address": {
+    "use": "work",
+    "type": "physical",
+    "line": ["2900 W Big Beaver Rd"],
+    "city": "Troy",
+    "state": "MI",
+    "postalCode": "48084",
+    "country": "US"
+  },
+  "position": {
+    "latitude": 42.5584,
+    "longitude": -83.1499
+  },
+  "managingOrganization": {
+    "reference": "Organization/org-theoria-mi",
+    "display": "Theoria Medical - Michigan Division"
+  },
+  "extension": [
+    {
+      "url": "https://medos.health/fhir/ext/facility-capacity",
+      "valueInteger": 120
+    },
+    {
+      "url": "https://medos.health/fhir/ext/current-census",
+      "valueInteger": 108
+    },
+    {
+      "url": "https://medos.health/fhir/ext/acuity-level",
+      "valueCode": "moderate"
+    },
+    {
+      "url": "https://medos.health/fhir/ext/state-staffing-ratio",
+      "valueString": "1:8 RN, 1:15 CNA (Michigan requirement)"
+    }
+  ]
+}
+```
+
+**MedOS extensions:**
+
+| Extension URL | Type | Description |
+|--------------|------|-------------|
+| `https://medos.health/fhir/ext/facility-capacity` | integer | Maximum bed capacity |
+| `https://medos.health/fhir/ext/current-census` | integer | Current patient count (updated daily) |
+| `https://medos.health/fhir/ext/acuity-level` | code | Average acuity: `low \| moderate \| high \| critical` |
+| `https://medos.health/fhir/ext/state-staffing-ratio` | string | State-mandated minimum staffing ratios |
+| `https://medos.health/fhir/ext/theoria-region` | string | Theoria operational region (e.g., "michigan-southeast") |
+| `https://medos.health/fhir/ext/travel-time-matrix` | complex | Pre-computed travel times to nearby facilities |
+
+---
+
 ## Quick Reference Card
 
 | What | Where to Look |

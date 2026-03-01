@@ -53,9 +53,9 @@ Input Validation -> Context Retrieval -> AI Processing -> Confidence Check
 
 ---
 
-## 2. The 5 Core Agents
+## 2. The 5 Foundation Agents
 
-Each agent is a LangGraph `StateGraph` with defined authority, constraints, escalation rules, and audit requirements. All agents share the base pattern from [[ADR-003-ai-agent-framework]] but with domain-specific nodes and thresholds.
+Each agent is a LangGraph `StateGraph` with defined authority, constraints, escalation rules, and audit requirements. All agents share the base pattern from [[ADR-003-ai-agent-framework]] but with domain-specific nodes and thresholds. For the 7 additional Theoria Medical-specific agents (Agents 6-12), see Section 9.
 
 ---
 
@@ -1227,12 +1227,22 @@ Both protocols flow through a shared gateway layer that enforces authentication,
 
 ```mermaid
 graph TB
-    subgraph "MedOS Agents"
+    subgraph "Foundation Agents"
         Scribe[Clinical Scribe Agent]
         PA[Prior Auth Agent]
         Denial[Denial Management Agent]
         PatComm[Patient Communication Agent]
         Quality[Quality Reporting Agent]
+    end
+
+    subgraph "Theoria Medical Agents"
+        Guardian[Post-Acute Guardian]
+        CCMRev[CCM Revenue Agent]
+        ShiftSum[Shift Summary Agent]
+        ACOQual[ACO REACH Quality]
+        SNFBridge[SNF-Hospital Bridge]
+        CareOpt[Care Plan Optimizer]
+        StaffOpt[Staffing Optimizer]
     end
 
     subgraph "External Agents (A2A)"
@@ -1254,12 +1264,23 @@ graph TB
         Context[Context MCP - 4 tools]
     end
 
-    %% A2A: agent-to-agent
+    %% A2A: agent-to-agent (Foundation)
     Scribe <-->|A2A| A2A_GW
     PA <-->|A2A| A2A_GW
     Denial <-->|A2A| A2A_GW
     PatComm <-->|A2A| A2A_GW
     Quality <-->|A2A| A2A_GW
+
+    %% A2A: agent-to-agent (Theoria)
+    Guardian <-->|A2A| A2A_GW
+    CCMRev <-->|A2A| A2A_GW
+    ShiftSum <-->|A2A| A2A_GW
+    ACOQual <-->|A2A| A2A_GW
+    SNFBridge <-->|A2A| A2A_GW
+    CareOpt <-->|A2A| A2A_GW
+    StaffOpt <-->|A2A| A2A_GW
+
+    %% A2A: external
     EpicAI <-->|A2A| A2A_GW
     PayerAI <-->|A2A| A2A_GW
     Marketplace <-->|A2A| A2A_GW
@@ -1268,6 +1289,9 @@ graph TB
     Scribe -->|MCP| MCP_GW
     PA -->|MCP| MCP_GW
     Denial -->|MCP| MCP_GW
+    Guardian -->|MCP| MCP_GW
+    CareOpt -->|MCP| MCP_GW
+    SNFBridge -->|MCP| MCP_GW
     MCP_GW --> FHIR
     MCP_GW --> Billing
     MCP_GW --> Sched
@@ -1367,8 +1391,566 @@ Each MedOS agent exposes an A2A Agent Card at a dedicated endpoint, enabling cap
 | Denial Management | `/a2a/denial-management` | analyze-denial, draft-appeal, assess-viability |
 | Patient Communication | `/a2a/patient-comms` | send-reminder, answer-faq, route-message |
 | Quality Reporting | `/a2a/quality-reporting` | calculate-measure, identify-gaps, benchmark |
+| Post-Acute Guardian | `/a2a/post-acute-guardian` | assess-risk, generate-alert, monitor-device |
+| CCM Revenue | `/a2a/ccm-revenue` | track-activity, check-eligibility, generate-claim |
+| Shift Summary | `/a2a/shift-summary` | scan-patients, generate-briefing, deliver-handoff |
+| ACO REACH Quality | `/a2a/aco-quality` | identify-gaps, calculate-measures, project-savings |
+| SNF-Hospital Bridge | `/a2a/snf-bridge` | ingest-discharge, reconcile, generate-report |
+| Care Plan Optimizer | `/a2a/care-optimizer` | analyze-trends, retrieve-guidelines, recommend |
+| Staffing Optimizer | `/a2a/staffing` | predict-census, optimize-schedule, analyze-cost |
 
 External agents discover MedOS agents via the standard `/.well-known/agent.json` endpoint, which lists all available Agent Cards. After OAuth2 authentication, external agents can access extended Agent Cards with additional capabilities.
+
+---
+
+## 9. Theoria Medical Agents (Sprint S4F)
+
+MedOS Sprint S4F introduces 7 new agents designed specifically for Theoria Medical's post-acute care operations. These agents extend the core platform with capabilities tailored to managing 200+ SNF/ALF facilities under ACO REACH value-based contracts. See [[EPIC-016-theoria-medical-pilot]] for the full sprint plan and [[LangGraph-Agent-Implementation]] for implementation details.
+
+### 9.1 Theoria Agent Architecture Overview
+
+The Theoria agents integrate with the existing 5-agent platform through the A2A protocol ([[ADR-008-a2a-agent-communication]]), device data pipeline ([[ADR-007-wearable-iot-integration]]), and context rehydration engine ([[ADR-006-context-rehydration]]). They add specialized post-acute care capabilities while sharing the same infrastructure: LangGraph orchestration, PostgreSQL checkpointing, HIPAA compliance layer, and Langfuse observability.
+
+```mermaid
+graph TB
+    subgraph "Foundation Agents (1-5)"
+        DOC[1. Clinical Scribe]
+        PA[2. Prior Auth]
+        DEN[3. Denial Management]
+        PAT[4. Patient Communication]
+        QUA[5. Quality Reporting]
+    end
+
+    subgraph "Theoria Medical Agents (6-12)"
+        GUARD[6. Post-Acute Guardian]
+        CCM[7. CCM Revenue]
+        SHIFT[8. Shift Summary]
+        ACO[9. ACO REACH Quality]
+        BRIDGE[10. SNF-Hospital Bridge]
+        CARE[11. Care Plan Optimizer]
+        STAFF[12. Staffing Optimizer]
+    end
+
+    subgraph "Data Sources"
+        DEVICES[Wearable Devices<br/>Oura, Apple Watch, Withings]
+        ADT[ADT Events<br/>Hospital Discharges]
+        CENSUS[Census Data<br/>50+ Facilities]
+        SCHED[Provider Schedules]
+    end
+
+    subgraph "Shared Infrastructure"
+        A2A_GW[A2A Gateway]
+        MCP_GW[MCP Gateway]
+        FHIR_DB[(FHIR Store<br/>PostgreSQL)]
+        REDIS[(Redis<br/>Cache + Queue)]
+        PGV[(pgvector<br/>Guidelines + Codes)]
+    end
+
+    %% Device data flow
+    DEVICES -->|FHIR Observations| GUARD
+    GUARD -->|P1/P2 Alerts| A2A_GW
+    A2A_GW -->|A2A| PAT
+    GUARD -->|Vital changes| A2A_GW
+    A2A_GW -->|A2A trigger| CARE
+
+    %% CCM flow
+    CCM -->|Claim draft| A2A_GW
+    A2A_GW -->|Revenue pipeline| DEN
+
+    %% Shift flow
+    SHIFT -->|Patient summaries| A2A_GW
+    A2A_GW -->|Context request| DOC
+
+    %% ACO Quality flow
+    ACO -->|Care gaps| A2A_GW
+    A2A_GW -->|Outreach| PAT
+    ACO -->|Measures| QUA
+
+    %% Bridge flow
+    ADT -->|Discharge event| BRIDGE
+    BRIDGE -->|Reconciliation alert| A2A_GW
+    A2A_GW -->|A2A| PAT
+
+    %% Staffing flow
+    CENSUS --> STAFF
+    SCHED --> STAFF
+
+    %% All agents use shared infra
+    GUARD -->|MCP| MCP_GW
+    CCM -->|MCP| MCP_GW
+    SHIFT -->|MCP| MCP_GW
+    ACO -->|MCP| MCP_GW
+    BRIDGE -->|MCP| MCP_GW
+    CARE -->|MCP| MCP_GW
+    STAFF -->|MCP| MCP_GW
+
+    MCP_GW --> FHIR_DB
+    MCP_GW --> REDIS
+    CARE -->|RAG| PGV
+
+    style GUARD fill:#ff9999
+    style CCM fill:#99ccff
+    style SHIFT fill:#99ff99
+    style ACO fill:#ffcc99
+    style BRIDGE fill:#cc99ff
+    style CARE fill:#ffff99
+    style STAFF fill:#ff99cc
+```
+
+---
+
+### 9.2 Post-Acute Guardian Agent
+
+**Module:** F (Patient Engagement) + B (Provider Workflow)
+**Pipeline:** Device Reading -> Context Rehydration -> Risk Assessment -> Alert Triage -> Provider Notification
+
+#### Purpose
+
+Monitors post-acute patients via wearable device data (weight, SpO2, HRV, sleep quality, heart rate) and detects clinically significant deterioration patterns before they require hospitalization. The primary use case: catching CHF exacerbation (3 lbs weight gain in 48h + sleep quality decline) before it becomes a $15-25K rehospitalization.
+
+#### Authority
+
+- Read device data from Device Bridge MCP Server
+- Generate risk assessments with P1-P4 severity classification
+- Send P2-P4 alerts via A2A to Patient Communication Agent
+- Log risk assessments as FHIR RiskAssessment resources
+
+#### Constraints
+
+- **CANNOT diagnose** -- identifies risk patterns, not diagnoses
+- **CANNOT prescribe or modify medications** -- medication suggestions always require physician approval
+- **CANNOT suppress critical alerts** -- P1 alerts always reach the physician
+- **CANNOT access device data outside assigned facility/patient scope**
+
+#### Escalation Rules
+
+| Condition | Action |
+|-----------|--------|
+| Weight gain >3 lbs in 48h + SpO2 <92% (CHF patient) | P1: Immediate physician alert, Furosemide consideration |
+| SpO2 <90% sustained >30 min | P1: Immediate alert + recommend stat telemedicine |
+| HRV decrease >20% from baseline | P2: Urgent nursing alert |
+| Sleep quality drop >15% over 3 days | P3: Routine -- add to next shift briefing |
+| Device offline >24 hours | P3: Alert nursing staff to check device |
+
+#### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| P3-P4 alert generation | >= 0.85 | 0.70-0.85 | < 0.70 |
+| P1-P2 alert generation | >= 0.90 | 0.80-0.90 | < 0.80 |
+| Medication recommendations | N/A | N/A | ALWAYS human review |
+
+#### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Patient`, `Observation`, `Device`, `DeviceMetric` | Device readings and patient context |
+| Read | `Condition`, `MedicationRequest`, `CarePlan` | Clinical context for risk assessment |
+| Write | `RiskAssessment`, `CommunicationRequest`, `Flag` | Risk scores, alerts, patient flags |
+
+#### Revenue / Clinical Impact
+
+- Prevents $15-25K rehospitalizations
+- Protects ACO REACH shared savings
+- Generates RPM billing revenue (CPT 99457/99458: $50-80/patient/month)
+
+---
+
+### 9.3 CCM Revenue Agent
+
+**Module:** C (Revenue Cycle) + F (Patient Engagement)
+**Pipeline:** Activity Tracking -> Classification -> Eligibility Check -> Threshold Detection -> Claim Generation -> Billing Review
+
+#### Purpose
+
+Tracks Chronic Care Management (CCM) activities per patient per month and automatically generates CPT 99490/99491 claims when the 20-minute or 40-minute threshold is crossed. Captures $60-150/patient/month in revenue that most practices leave on the table due to manual tracking burden.
+
+#### Authority
+
+- Track and classify CCM-qualifying activities from EventBridge events
+- Verify billing eligibility (consent, care plan, 2+ chronic conditions)
+- Generate claim drafts with appropriate CPT codes
+- Route claims for billing staff review
+
+#### Constraints
+
+- **CANNOT submit claims without human review**
+- **CANNOT fabricate or inflate activity durations**
+- **CANNOT bill without verified patient consent on file**
+- **CANNOT bill without an active care plan (CMS requirement)**
+
+#### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Activity classification | >= 0.90 | 0.80-0.90 | < 0.80 |
+| Claim generation | N/A | N/A | ALWAYS human review |
+
+#### Revenue Impact
+
+- $60-150/patient/month in CCM billing
+- With 5,000+ attributed lives: potential $300K-750K/month revenue capture
+- Estimated 70%+ of qualifying CCM time currently goes unbilled
+
+---
+
+### 9.4 Shift Summary Agent
+
+**Module:** B (Provider Workflow)
+**Pipeline:** Provider Login -> Multi-Facility Scan -> Context Rehydration -> Priority Ranking -> Briefing Generation -> Delivery
+
+#### Purpose
+
+Generates structured handoff briefings when providers transition between shifts across 50+ facilities. Priority-ranks patients by acuity and pending actions. P1 patients (acute changes, unacknowledged critical alerts) are always flagged for immediate review.
+
+#### Authority
+
+- Scan active patients across assigned facilities
+- Batch rehydrate clinical context for all patients
+- Generate priority-ranked shift briefings
+- Deliver briefings to incoming provider at login
+
+#### Constraints
+
+- **Informational only** -- no autonomous clinical actions
+- **CANNOT modify patient records** -- read-only access
+- **CANNOT suppress P1 patient flags** -- always shown prominently
+
+#### Clinical Impact
+
+- Prevents information loss at shift boundaries (80% of serious SNF medical errors)
+- Saves 30-45 minutes of manual chart review per shift start
+- Unified view across 50+ facilities for single provider
+
+---
+
+### 9.5 ACO REACH Quality Agent
+
+**Module:** E (Population Health & Analytics)
+**Pipeline:** Population Scan -> Gap Identification -> Revenue Impact Calculation -> Outreach Queue -> Quality Measure Reporting
+
+#### Purpose
+
+Monitors Theoria's attributed patient population under ACO REACH (Empassion Health) for care gaps, calculates quality measure compliance, and triggers automated patient outreach. Directly impacts shared savings distributions by optimizing quality scores.
+
+#### Authority
+
+- Identify care gaps from HEDIS/CMS quality measures (rule-based)
+- Calculate revenue impact per gap closure
+- Queue outreach via A2A to Patient Communication Agent
+- Generate FHIR MeasureReport resources
+
+#### Constraints
+
+- **CANNOT make individual clinical recommendations** -- identifies gaps, clinicians decide actions
+- **CANNOT directly contact patients** -- outreach goes through Patient Communication Agent
+- **CANNOT submit quality reports externally without practice manager approval**
+- **CANNOT alter quality measure definitions** -- measures defined by CMS/NCQA
+
+#### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Gap identification | >= 0.90 (rule-based) | 0.80-0.90 | < 0.80 |
+| Quality score calculation | >= 0.99 (deterministic) | N/A | Data quality issues |
+| Clinical recommendations | N/A | N/A | ALWAYS provider sign-off |
+
+---
+
+### 9.6 SNF-to-Hospital Semantic Data Bridge
+
+**Module:** H (Integration) + A (Patient Identity)
+**Pipeline:** ADT Event -> Discharge Summary Ingestion -> NLP Parsing -> Pre-Hospital Record Retrieval -> Semantic Reconciliation -> Discrepancy Report -> Physician Review
+
+#### Purpose
+
+Solves Dr. Di Rezze's founding insight: the dangerous "false sense of security" when patients transition between hospital and SNF without proper data reconciliation. Ingests discharge summaries (structured FHIR or unstructured PDF), reconciles against the pre-hospitalization record, and generates discrepancy reports for every medication change, new diagnosis, and follow-up instruction.
+
+#### Authority
+
+- Ingest discharge summaries from hospital FHIR endpoints or document uploads
+- Parse unstructured clinical documents using NLP
+- Perform semantic medication and diagnosis reconciliation
+- Generate structured discrepancy reports
+- Alert providers via A2A for critical discrepancies
+
+#### Constraints
+
+- **ALL medication changes** require pharmacist/physician review before updating patient record
+- **CANNOT auto-update patient medications** in the EHR -- reconciliation is advisory until reviewed
+- **CANNOT modify clinical records** -- generates reports for human action
+- **CANNOT access hospital systems beyond authorized FHIR scope**
+
+#### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Medication matching | >= 0.90 | 0.80-0.90 | < 0.80 |
+| Diagnosis reconciliation | >= 0.85 | 0.75-0.85 | < 0.75 |
+| Follow-up extraction | >= 0.80 | 0.70-0.80 | < 0.70 |
+
+#### Clinical Impact
+
+- Catches medication errors at the most dangerous transition point in healthcare
+- Reduces 30-day readmission rates by 20-30% through proper transition reconciliation
+- Addresses the core problem that led Di Rezze to found Theoria Medical
+
+---
+
+### 9.7 Generative Care Plan Optimizer
+
+**Module:** B (Provider Workflow) + E (Population Health)
+**Pipeline:** Longitudinal Data Gathering -> Clinical Guideline RAG Retrieval -> Recommendation Generation -> Evidence Scoring -> Physician Review
+
+#### Purpose
+
+AI super-consultant that synthesizes longitudinal patient data with latest clinical guidelines (via RAG from pgvector) to generate proactive, evidence-based care recommendations. Scales top-clinician expertise across Theoria's entire 200+ facility network.
+
+#### Authority
+
+- Pull comprehensive longitudinal patient data from FHIR store
+- Retrieve relevant clinical guidelines via semantic search (pgvector)
+- Generate evidence-based recommendations with A/B/C evidence levels
+- Predict deterioration risk based on trend analysis
+
+#### Constraints
+
+- **ALWAYS requires physician review** -- this is decision SUPPORT, not autonomous care
+- **CANNOT prescribe medications** -- medication suggestions are advisory only
+- **Evidence Level C recommendations** require attending physician (not NP/PA) sign-off
+- **CANNOT override physician clinical judgment**
+- **NEVER recommends without evidence citation**
+
+#### Kill Shot Example
+
+> "Weight up 4 lbs in 48h + nocturnal O2 desaturation -> 85% predictive of CHF exacerbation within 72h. Recommend: 1) 40mg Lasix IV Push, 2) Stat telemedicine check-in, 3) Daily weight protocol"
+> Evidence Level: A (ACCF/AHA Heart Failure Guidelines, 2022 update)
+
+---
+
+### 9.8 Dynamic Staffing & Resource Allocation Agent
+
+**Module:** B (Provider Workflow) + F (Patient Engagement)
+**Pipeline:** Census Data + Provider Availability -> Census Prediction (72h) -> Cost-Optimal Assignment -> Schedule Recommendations -> Operations Review
+
+#### Purpose
+
+Optimizes provider scheduling across 200+ facilities using census predictions, acuity modeling, and cost optimization. Reduces reliance on expensive locum tenens providers ($2-5K/day). Directly addresses Amulet Capital Partners' margin expansion mandate.
+
+#### Authority
+
+- Gather facility census, acuity, and staffing data
+- Predict census trends 72 hours in advance
+- Generate cost-optimal provider scheduling recommendations
+- Calculate savings vs current staffing model
+
+#### Constraints
+
+- **All schedule changes** require operations team review
+- **Changes affecting > 5 providers** require ops director approval
+- **Cost savings > $10K/week** require ops director + finance review
+- **CANNOT violate state-mandated staffing ratios** (hard constraint)
+- **CANNOT schedule providers beyond regulatory hour limits** (12h/shift, 60h/week)
+
+#### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Census prediction (72h) | >= 0.85 | 0.70-0.85 | < 0.70 |
+| Cost optimization | >= 0.80 | 0.65-0.80 | < 0.65 |
+| Schedule changes | N/A | N/A | ALWAYS operations review |
+
+#### Revenue Impact
+
+- Reduces locum tenens costs ($2-5K/day per locum shift avoided)
+- Projected 10-15% reduction in total provider staffing costs
+- Prevents understaffing fines from state regulators
+
+---
+
+### 9.9 Theoria Agent Communication Map
+
+This diagram shows how the 7 Theoria agents communicate with each other and with the 5 foundation agents through the A2A protocol.
+
+```mermaid
+sequenceDiagram
+    participant DEV as Device Bridge
+    participant GUARD as Guardian Agent
+    participant CARE as Care Plan Optimizer
+    participant SHIFT as Shift Summary Agent
+    participant CCM as CCM Revenue Agent
+    participant ACO as ACO Quality Agent
+    participant BRIDGE as SNF-Hospital Bridge
+    participant STAFF as Staffing Optimizer
+    participant PAT as Patient Comms Agent
+    participant DOC as Clinical Scribe
+
+    Note over DEV,DOC: Daily Operations Flow
+
+    DEV->>GUARD: FHIR Observation (weight gain)
+    GUARD->>GUARD: Risk assessment (P2)
+    GUARD->>PAT: A2A: Send P2 alert to nursing
+    GUARD->>CARE: A2A: Vital change trigger
+
+    CARE->>CARE: RAG guideline retrieval + recommendation
+    CARE-->>SHIFT: Context update (new recommendation)
+
+    Note over SHIFT: Provider logs in for shift
+
+    SHIFT->>DOC: A2A: Request encounter summaries
+    DOC-->>SHIFT: Patient summaries
+    SHIFT->>SHIFT: Priority ranking
+    SHIFT-->>SHIFT: Deliver briefing
+
+    Note over CCM: Monthly cycle
+
+    CCM->>CCM: Aggregate activities (>20 min)
+    CCM->>CCM: Generate CPT 99490 claim
+
+    Note over ACO: Nightly scan
+
+    ACO->>ACO: Identify care gaps
+    ACO->>PAT: A2A: Queue care gap outreach
+
+    Note over BRIDGE: Hospital discharge event
+
+    BRIDGE->>BRIDGE: Ingest + reconcile discharge summary
+    BRIDGE->>PAT: A2A: Alert provider (critical discrepancies)
+
+    Note over STAFF: Nightly optimization
+
+    STAFF->>STAFF: Census prediction + schedule optimization
+```
+
+---
+
+### 9.10 Theoria Agent Security Model
+
+All Theoria agents inherit the base security model from Section 7 with additional PHI access controls specific to multi-facility post-acute care:
+
+| Agent | PHI Access Level | Allowed FHIR Resources | Restricted Fields |
+|---|---|---|---|
+| Post-Acute Guardian | Clinical + device data | Patient, Observation, Device, Condition, MedicationRequest | Financial data, insurance |
+| CCM Revenue | Billing + limited clinical | Patient, CarePlan, Communication, Claim, Condition | Full clinical notes |
+| Shift Summary | Full clinical (read-only) | Patient, Encounter, Observation, MedicationRequest, DiagnosticReport | Financial data |
+| ACO REACH Quality | Population (aggregated) | Patient, Observation, Condition, Procedure, MeasureReport | Individual PHI minimized |
+| SNF-Hospital Bridge | Full clinical + cross-system | Patient, MedicationRequest, Condition, DocumentReference, Encounter | Financial data |
+| Care Plan Optimizer | Full clinical | Patient, CarePlan, Observation, MedicationRequest, Condition | Financial data, insurance |
+| Staffing Optimizer | Demographics only | Practitioner, PractitionerRole, Schedule, Location, Organization | All clinical data, all patient PHI |
+
+### 9.11 Theoria Agent Cards (A2A Discovery)
+
+| Agent | Agent Card URL | Key Skills |
+|-------|---------------|------------|
+| Post-Acute Guardian | `/a2a/post-acute-guardian` | assess-risk, generate-alert, monitor-device |
+| CCM Revenue | `/a2a/ccm-revenue` | track-activity, check-eligibility, generate-claim |
+| Shift Summary | `/a2a/shift-summary` | scan-patients, generate-briefing, deliver-handoff |
+| ACO REACH Quality | `/a2a/aco-quality` | identify-gaps, calculate-measures, project-savings |
+| SNF-Hospital Bridge | `/a2a/snf-bridge` | ingest-discharge, reconcile, generate-report |
+| Care Plan Optimizer | `/a2a/care-optimizer` | analyze-trends, retrieve-guidelines, recommend |
+| Staffing Optimizer | `/a2a/staffing` | predict-census, optimize-schedule, analyze-cost |
+
+---
+
+### 9.12 Updated Implementation Roadmap
+
+The Theoria agents are scheduled for Sprint S4F, extending the Phase 1 roadmap:
+
+| Phase | Agents | Timeline |
+|-------|--------|----------|
+| Phase 1 Foundation (S0-S6) | 1. Clinical Scribe, 2. Prior Auth, 3. Denial Management, 4. Patient Comms, 5. Quality Reporting | Months 0-6 (DONE) |
+| Sprint S4F (Theoria Pilot) | 6. Guardian, 7. CCM Revenue, 8. Shift Summary, 9. ACO Quality, 10. SNF Bridge, 11. Care Optimizer, 12. Staffing | Weeks 15-18 |
+| Phase 2 (Post-Pilot) | Refinement, additional facility onboarding, payer integrations | Months 7-12 |
+
+---
+
+### 9.13 Updated Event Bus with Theoria Agents
+
+```mermaid
+graph TB
+    subgraph "Foundation Agents"
+        DOC[Clinical Documentation Agent]
+        PA[Prior Auth Agent]
+        DEN[Denial Management Agent]
+        PAT[Patient Communication Agent]
+        QUA[Quality Reporting Agent]
+    end
+
+    subgraph "Theoria Agents"
+        GUARD[Post-Acute Guardian]
+        CCM[CCM Revenue Agent]
+        SHIFT[Shift Summary Agent]
+        ACO[ACO REACH Quality Agent]
+        BRIDGE[SNF-Hospital Bridge]
+        CARE[Care Plan Optimizer]
+        STAFF[Staffing Optimizer]
+    end
+
+    subgraph "Event Bus (Redis Streams)"
+        E1[encounter.documented]
+        E2[coding.approved]
+        E3[pa.required]
+        E4[claim.denied]
+        E5[care.gap.detected]
+        E6[appointment.reminder.due]
+        E7[device.reading.received]
+        E8[device.alert.triggered]
+        E9[ccm.threshold.crossed]
+        E10[shift.transition]
+        E11[discharge.received]
+        E12[census.changed]
+    end
+
+    subgraph "Human Interface"
+        PROV[Provider Workspace]
+        BILL[Billing Dashboard]
+        PTNT[Patient Portal]
+        OPS[Operations Dashboard]
+    end
+
+    %% Foundation events
+    DOC -->|publishes| E1
+    E1 -->|triggers| QUA
+    E2 -->|triggers| PA
+    E4 -->|triggers| DEN
+    E5 -->|triggers| PAT
+    E6 -->|triggers| PAT
+
+    %% Theoria events
+    E7 -->|triggers| GUARD
+    GUARD -->|publishes| E8
+    E8 -->|triggers| CARE
+    E8 -->|notifies| PROV
+    E9 -->|triggers| CCM
+    CCM -.->|claim queue| BILL
+    E10 -->|triggers| SHIFT
+    SHIFT -.->|briefing| PROV
+    E11 -->|triggers| BRIDGE
+    BRIDGE -.->|reconciliation| PROV
+    E12 -->|triggers| STAFF
+    STAFF -.->|schedule| OPS
+    ACO -->|publishes| E5
+    ACO -.->|reports| PROV
+```
+
+---
+
+### 9.14 Safety Caps (Updated with Theoria Agents)
+
+| Agent | Max Daily Auto-Executions | Rationale |
+|-------|--------------------------|-----------|
+| Clinical Documentation | Unlimited (always reviewed) | Provider reviews every note |
+| Prior Auth | 0 (always reviewed) | Financial and clinical liability |
+| Denial Management | 0 (always reviewed) | Financial liability |
+| Patient Communication | 500 per tenant | Prevent spam; rate limit outbound messages |
+| Quality Reporting | 50 reports | Prevent excessive compute on large populations |
+| Post-Acute Guardian | Unlimited for P3-P4; P1-P2 always reviewed | Device data is continuous; critical alerts need immediate review |
+| CCM Revenue | 200 claims per tenant | Rate limit claim generation; billing staff review capacity |
+| Shift Summary | Unlimited (informational) | Read-only, no autonomous actions |
+| ACO REACH Quality | 100 outreach per day | Prevent outreach fatigue; respect patient preferences |
+| SNF-Hospital Bridge | 0 (always reviewed) | Medication safety -- all changes need physician review |
+| Care Plan Optimizer | 0 (always reviewed) | Clinical recommendations always need physician approval |
+| Staffing Optimizer | 0 (always reviewed) | Schedule changes always need operations approval |
 
 ---
 
@@ -1378,6 +1960,8 @@ External agents discover MedOS agents via the standard `/.well-known/agent.json`
 - [[ADR-003-ai-agent-framework]] -- Framework selection decision
 - [[ADR-001-fhir-native-data-model]] -- FHIR data model consumed by agents
 - [[ADR-004-fastapi-backend-architecture]] -- Backend serving agent endpoints
+- [[ADR-006-context-rehydration]] -- Context rehydration for Theoria agents
+- [[ADR-007-wearable-iot-integration]] -- Device integration for Guardian Agent
 - [[ADR-008-a2a-agent-communication]] -- A2A protocol adoption decision
 - [[System-Architecture-Overview]] -- How agents fit in the overall system
 - [[context-rotting-and-agent-memory]] -- Memory architecture research
@@ -1390,3 +1974,6 @@ External agents discover MedOS agents via the standard `/.well-known/agent.json`
 - [[a2a-protocol-reference]] -- A2A protocol reference
 - [[MOC-Agent-Architecture]] -- Navigation index for agent docs
 - [[EPIC-010-security-pilot-readiness]] -- Sprint 5 security hardening
+- [[EPIC-016-theoria-medical-pilot]] -- Theoria Medical pilot sprint
+- [[FHIR-R4-Deep-Dive]] -- FHIR resource schemas including Theoria-specific resources
+- [[LangGraph-Agent-Implementation]] -- Full implementation code for all 11 agents

@@ -2195,16 +2195,2014 @@ Critical: In-progress agent runs (with active checkpoints) must complete on the 
 
 ---
 
+## 11. Agent 5: Post-Acute Guardian Agent (Theoria Medical)
+
+This agent monitors post-acute care patients (SNF, ALF) using wearable device data (Oura Ring, Apple Watch, Withings scales, pulse oximeters) and triggers clinical alerts when physiological patterns indicate deterioration. The primary kill shot: catching CHF exacerbation before it results in a $15-25K rehospitalization. See [[ADR-007-wearable-iot-integration]] for device integration architecture and [[ADR-006-context-rehydration]] for the context retrieval pattern.
+
+### Module Mapping
+
+- **Module F** (Patient Engagement): RPM data collection, patient-facing alerts
+- **Module B** (Provider Workflow): Clinical alert routing, care plan updates
+
+### Purpose
+
+Continuously monitors wearable device readings from post-acute patients across 50+ SNF/ALF facilities, detects clinically significant trends (weight gain, SpO2 drops, HRV deterioration, sleep quality changes), and generates prioritized alerts to nursing staff and attending physicians via A2A protocol.
+
+### Trigger
+
+Incoming FHIR `Observation` from the Device Bridge MCP Server ([[ADR-007-wearable-iot-integration]]) when a new device reading is received or when a batch of readings crosses a configured threshold.
+
+### State Definition
+
+```python
+from typing import Annotated, Optional, Literal
+from typing_extensions import TypedDict
+from operator import add
+
+class PostAcuteGuardianState(TypedDict):
+    # Input
+    patient_id: str
+    facility_id: str
+    device_readings: Annotated[list[dict], add]  # FHIR Observations from Device Bridge
+    reading_window_hours: int                     # Lookback window (default: 48h)
+
+    # Context (ADR-006 rehydration)
+    clinical_context: Optional[dict]              # Rehydrated patient context
+    active_conditions: list[dict]                 # Current diagnoses (CHF, COPD, DM, etc.)
+    current_medications: list[dict]               # Active medication list
+    baseline_vitals: Optional[dict]               # Patient-specific baselines
+
+    # Risk Assessment
+    risk_assessment: Optional[dict]               # AI-generated risk analysis
+    risk_score: float                             # 0.0 - 1.0 composite risk
+    alert_level: str                              # P1 (immediate) | P2 (urgent) | P3 (routine) | P4 (informational)
+    trend_analysis: Optional[dict]                # Multi-day trend data
+
+    # Action
+    recommended_action: Optional[str]             # AI-generated recommendation
+    recommended_medications: list[dict]            # Medication suggestions (always requires human approval)
+    care_plan_updates: list[dict]                 # Suggested care plan modifications
+    notification_targets: list[str]               # Provider IDs to notify
+
+    # Workflow
+    confidence: float
+    status: str                                   # received | context_loaded | assessed | alerted | acknowledged
+    a2a_task_id: Optional[str]                    # A2A task for nurse notification
+    error: Optional[str]
+```
+
+### Graph Definition
+
+```python
+from langgraph.graph import StateGraph, START, END
+from langgraph.types import Command, interrupt
+from typing import Literal
+import json
+
+def ingest_device_readings(state: PostAcuteGuardianState) -> dict:
+    """Ingest and validate incoming device readings from Device Bridge."""
+    from app.services.device_bridge import DeviceBridgeService
+
+    bridge = DeviceBridgeService()
+    validated_readings = bridge.validate_and_enrich(
+        patient_id=state["patient_id"],
+        readings=state["device_readings"],
+        window_hours=state["reading_window_hours"],
+    )
+    return {
+        "device_readings": validated_readings,
+        "status": "received",
+    }
+
+
+def rehydrate_context(state: PostAcuteGuardianState) -> dict:
+    """Rehydrate patient clinical context via ADR-006 Context Rehydration Engine."""
+    from app.services.context import ContextRehydrationEngine
+
+    engine = ContextRehydrationEngine()
+    context = engine.rehydrate(
+        patient_id=state["patient_id"],
+        include=["conditions", "medications", "care_plans", "recent_encounters", "baseline_vitals"],
+    )
+    return {
+        "clinical_context": context.summary,
+        "active_conditions": context.conditions,
+        "current_medications": context.medications,
+        "baseline_vitals": context.baseline_vitals,
+        "status": "context_loaded",
+    }
+
+
+def assess_risk(state: PostAcuteGuardianState) -> dict:
+    """AI-powered risk assessment combining device trends with clinical context."""
+    readings_summary = json.dumps(state["device_readings"][-20:], indent=2)  # Last 20 readings
+    conditions = json.dumps(state["active_conditions"], indent=2)
+    meds = json.dumps(state["current_medications"], indent=2)
+    baselines = json.dumps(state["baseline_vitals"], indent=2)
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        system="""You are a post-acute care clinical decision support system. Analyze device
+readings against the patient's clinical context and baseline vitals to assess deterioration risk.
+
+ASSESSMENT CRITERIA:
+- Weight gain > 2 lbs in 24h or > 3 lbs in 48h in CHF patients = HIGH RISK
+- SpO2 < 92% sustained for > 30 min in COPD/CHF patients = HIGH RISK
+- HRV decrease > 20% from baseline = MODERATE RISK
+- Sleep quality score drop > 15% over 3 days = MODERATE RISK
+- Blood glucose > 300 mg/dL or < 70 mg/dL = HIGH RISK (DM patients)
+- Resting HR > 110 bpm sustained = MODERATE RISK
+- Temperature > 101.0F = MODERATE RISK (infection risk in SNF)
+
+Return JSON:
+{
+  "risk_score": float (0.0-1.0),
+  "alert_level": "P1" | "P2" | "P3" | "P4",
+  "risk_factors": [{"factor": str, "severity": str, "value": str, "baseline": str}],
+  "trend_analysis": {"direction": str, "days_declining": int, "key_indicators": [str]},
+  "recommended_action": str,
+  "recommended_medications": [{"medication": str, "dose": str, "rationale": str}],
+  "care_plan_updates": [{"action": str, "urgency": str}],
+  "confidence": float,
+  "clinical_reasoning": str
+}
+
+CRITICAL RULES:
+- DO NOT diagnose. You are identifying risk patterns, not making diagnoses.
+- DO NOT prescribe. Medication suggestions require physician approval.
+- Factor in current medications when assessing readings (e.g., beta-blockers affect HR).
+- Consider facility-specific context (SNF patients have different baselines than community-dwelling).""",
+        messages=[{
+            "role": "user",
+            "content": f"""Patient Conditions:\n{conditions}\n\nCurrent Medications:\n{meds}\n\nBaseline Vitals:\n{baselines}\n\nDevice Readings (last 48h):\n{readings_summary}"""
+        }],
+    )
+
+    assessment = json.loads(response.content[0].text)
+    return {
+        "risk_assessment": assessment,
+        "risk_score": assessment["risk_score"],
+        "alert_level": assessment["alert_level"],
+        "trend_analysis": assessment.get("trend_analysis"),
+        "recommended_action": assessment["recommended_action"],
+        "recommended_medications": assessment.get("recommended_medications", []),
+        "care_plan_updates": assessment.get("care_plan_updates", []),
+        "confidence": assessment["confidence"],
+        "status": "assessed",
+    }
+
+
+def route_by_alert_level(state: PostAcuteGuardianState) -> Literal["p1_immediate", "p2_urgent", "p3_routine", "p4_log_only"]:
+    """Route based on alert severity level."""
+    routing = {
+        "P1": "p1_immediate",
+        "P2": "p2_urgent",
+        "P3": "p3_routine",
+        "P4": "p4_log_only",
+    }
+    return routing.get(state["alert_level"], "p4_log_only")
+
+
+def p1_immediate(state: PostAcuteGuardianState) -> dict:
+    """P1: Immediate action required -- interrupt for physician review."""
+    decision = interrupt({
+        "type": "post_acute_p1_alert",
+        "patient_id": state["patient_id"],
+        "facility_id": state["facility_id"],
+        "alert_level": "P1",
+        "risk_score": state["risk_score"],
+        "risk_assessment": state["risk_assessment"],
+        "recommended_action": state["recommended_action"],
+        "recommended_medications": state["recommended_medications"],
+        "message": "IMMEDIATE: Patient deterioration detected. Physician review required.",
+    })
+    return {
+        "status": "acknowledged",
+        "notification_targets": [decision.get("acknowledged_by")],
+    }
+
+
+def p2_urgent(state: PostAcuteGuardianState) -> dict:
+    """P2: Urgent -- send A2A alert to nursing staff + notify physician."""
+    from app.services.a2a import A2AClient
+
+    a2a = A2AClient()
+    task_id = a2a.send_message(
+        target_agent="patient-communication",
+        task_type="clinical_alert",
+        payload={
+            "patient_id": state["patient_id"],
+            "facility_id": state["facility_id"],
+            "alert_level": "P2",
+            "recommended_action": state["recommended_action"],
+            "risk_assessment": state["risk_assessment"],
+        },
+    )
+
+    # Also interrupt for medication changes
+    if state["recommended_medications"]:
+        decision = interrupt({
+            "type": "post_acute_p2_medication_review",
+            "patient_id": state["patient_id"],
+            "recommended_medications": state["recommended_medications"],
+            "risk_assessment": state["risk_assessment"],
+            "message": "Medication change recommended. Physician approval required.",
+        })
+        return {
+            "status": "acknowledged",
+            "a2a_task_id": task_id,
+            "notification_targets": [decision.get("acknowledged_by")],
+        }
+
+    return {"status": "alerted", "a2a_task_id": task_id}
+
+
+def p3_routine(state: PostAcuteGuardianState) -> dict:
+    """P3: Routine -- log alert and add to provider's next-login summary."""
+    from app.services.notifications import NotificationService
+
+    notifications = NotificationService()
+    notifications.queue_for_next_login(
+        facility_id=state["facility_id"],
+        alert_type="device_trend",
+        patient_id=state["patient_id"],
+        summary=state["recommended_action"],
+    )
+    return {"status": "alerted"}
+
+
+def p4_log_only(state: PostAcuteGuardianState) -> dict:
+    """P4: Informational -- log for trend analysis, no immediate action."""
+    return {"status": "logged"}
+
+
+def write_fhir_risk_assessment(state: PostAcuteGuardianState) -> dict:
+    """Persist risk assessment as FHIR RiskAssessment resource."""
+    from app.services.fhir import FHIRService
+
+    fhir = FHIRService()
+    fhir.create_risk_assessment(
+        patient_id=state["patient_id"],
+        risk_score=state["risk_score"],
+        method="MedOS Post-Acute Guardian Agent v1.0",
+        basis_observations=[r.get("id") for r in state["device_readings"]],
+        prediction=state["recommended_action"],
+    )
+    return {"status": "persisted"}
+
+
+# --- Build graph ---
+
+guardian_builder = StateGraph(PostAcuteGuardianState)
+
+guardian_builder.add_node("ingest_device_readings", ingest_device_readings)
+guardian_builder.add_node("rehydrate_context", rehydrate_context)
+guardian_builder.add_node("assess_risk", assess_risk)
+guardian_builder.add_node("p1_immediate", p1_immediate)
+guardian_builder.add_node("p2_urgent", p2_urgent)
+guardian_builder.add_node("p3_routine", p3_routine)
+guardian_builder.add_node("p4_log_only", p4_log_only)
+guardian_builder.add_node("write_fhir_risk_assessment", write_fhir_risk_assessment)
+
+guardian_builder.add_edge(START, "ingest_device_readings")
+guardian_builder.add_edge("ingest_device_readings", "rehydrate_context")
+guardian_builder.add_edge("rehydrate_context", "assess_risk")
+guardian_builder.add_conditional_edges("assess_risk", route_by_alert_level, {
+    "p1_immediate": "p1_immediate",
+    "p2_urgent": "p2_urgent",
+    "p3_routine": "p3_routine",
+    "p4_log_only": "p4_log_only",
+})
+guardian_builder.add_edge("p1_immediate", "write_fhir_risk_assessment")
+guardian_builder.add_edge("p2_urgent", "write_fhir_risk_assessment")
+guardian_builder.add_edge("p3_routine", "write_fhir_risk_assessment")
+guardian_builder.add_edge("p4_log_only", "write_fhir_risk_assessment")
+guardian_builder.add_edge("write_fhir_risk_assessment", END)
+
+guardian_graph = guardian_builder.compile(checkpointer=checkpointer)
+```
+
+### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| P3-P4 alert generation | >= 0.85 | 0.70-0.85 | < 0.70 |
+| P1-P2 alert generation | >= 0.90 | 0.80-0.90 | < 0.80 |
+| Medication recommendations | N/A | N/A | ALWAYS human review |
+| Care plan modifications | N/A | N/A | ALWAYS human review |
+
+### Human-in-the-Loop Gates
+
+- **All P1 alerts** require physician acknowledgment before resolution
+- **All medication changes** require physician or pharmacist approval
+- **Care plan updates** require attending physician sign-off
+- **Transfer recommendations** (SNF to hospital) require physician order
+
+### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Patient` | Demographics, facility assignment |
+| Read | `Observation` | Device readings (weight, SpO2, HR, HRV, sleep) |
+| Read | `Device` | Registered wearable device details |
+| Read | `DeviceMetric` | Device measurement capabilities |
+| Read | `Condition` | Active conditions (CHF, COPD, DM) |
+| Read | `MedicationRequest` | Current medications affecting vital baselines |
+| Read | `CarePlan` | Active care plan for care plan update context |
+| Write | `RiskAssessment` | Generated risk assessment with score |
+| Write | `CommunicationRequest` | Alert sent to nursing/physician |
+| Write | `Flag` | Patient flag for elevated risk |
+
+### Revenue / Clinical Impact
+
+- **Prevents rehospitalizations**: Each avoided SNF-to-hospital transfer saves $15-25K
+- **Protects ACO REACH shared savings**: Rehospitalization penalties directly reduce Empassion Health distributions
+- **RPM billing**: Continuous monitoring generates CPT 99457/99458 revenue ($50-80/patient/month)
+- **Clinical impact**: Earlier intervention = better patient outcomes, lower mortality in post-acute CHF patients
+
+---
+
+## 12. Agent 6: CCM Revenue Agent (Theoria Medical)
+
+This agent tracks Chronic Care Management (CCM) activities across Theoria's patient population and automatically generates CPT 99490/99491 claims when the 20-minute or 40-minute monthly threshold is crossed. CCM billing is the single largest source of uncaptured revenue in post-acute care -- most practices leave $60-150/patient/month on the table because they cannot track care coordination time accurately. See [[Revenue-Cycle-Deep-Dive]] for CCM billing rules.
+
+### Module Mapping
+
+- **Module C** (Revenue Cycle): Claim generation, CPT code assignment
+- **Module F** (Patient Engagement): Activity tracking, care coordination logging
+
+### Purpose
+
+Continuously tracks qualifying CCM activities (phone calls, care plan reviews, medication reconciliation, lab result discussions, care coordination with specialists) per patient per calendar month. When the 20-minute threshold is reached, the agent generates a claim draft and routes it to the billing team. At 40 minutes, it upgrades to the higher-value CPT 99491 code.
+
+### Trigger
+
+EventBridge events from patient chart API actions: `patient.communication.logged`, `careplan.reviewed`, `medication.reconciled`, `lab.discussed`, `referral.coordinated`.
+
+### State Definition
+
+```python
+class CCMRevenueState(TypedDict):
+    # Input
+    patient_id: str
+    calendar_month: str                          # "2026-03" format
+    provider_id: str
+
+    # Activity Tracking
+    activities: Annotated[list[dict], add]        # [{"timestamp": str, "type": str, "duration_minutes": int, "provider_id": str, "description": str}]
+    total_minutes_month: int                      # Running total for current month
+    previous_activities_count: int                # Activities already logged before this run
+
+    # Billing
+    billing_threshold_crossed: bool               # True when >= 20 minutes
+    cpt_codes_earned: list[dict]                  # [{"code": "99490", "description": str, "minutes": int}]
+    claim_draft: Optional[dict]                   # Structured claim ready for review
+    attestation_required: bool                    # True if claim > $500/month
+
+    # Compliance
+    consent_verified: bool                        # CCM requires patient consent on file
+    care_plan_active: bool                        # Active care plan required for CCM billing
+    qualifying_conditions: list[dict]             # 2+ chronic conditions required
+
+    # Workflow
+    confidence: float
+    status: str                                   # tracking | threshold_crossed | claim_drafted | submitted
+    error: Optional[str]
+```
+
+### Graph Definition
+
+```python
+def aggregate_activities(state: CCMRevenueState) -> dict:
+    """Aggregate CCM-qualifying activities for the calendar month."""
+    from app.services.ccm import CCMTracker
+
+    tracker = CCMTracker()
+    monthly_summary = tracker.get_monthly_summary(
+        patient_id=state["patient_id"],
+        month=state["calendar_month"],
+    )
+    return {
+        "activities": monthly_summary.activities,
+        "total_minutes_month": monthly_summary.total_minutes,
+        "previous_activities_count": monthly_summary.previous_count,
+        "status": "tracking",
+    }
+
+
+def classify_activity(state: CCMRevenueState) -> dict:
+    """AI classification of whether activities qualify for CCM billing."""
+    # Only classify new activities (not previously processed)
+    new_activities = state["activities"][state["previous_activities_count"]:]
+    if not new_activities:
+        return {"status": "no_new_activities"}
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2048,
+        system="""You are a CCM billing compliance specialist. Classify each activity as
+qualifying or non-qualifying for CPT 99490 (Chronic Care Management).
+
+QUALIFYING ACTIVITIES (per CMS):
+- Care plan creation, review, or revision
+- Communication with patient/caregiver about care plan
+- Medication management and reconciliation
+- Coordination with other treating providers
+- Lab/test result review and patient communication
+- Referral management and follow-up
+- Health education related to chronic conditions
+
+NON-QUALIFYING ACTIVITIES:
+- Administrative scheduling (appointment reminders without clinical content)
+- Billing inquiries
+- Activities already billed under another E/M code for same date
+- Activities < 1 minute duration
+
+Return JSON:
+{
+  "classified_activities": [{"index": int, "qualifies": bool, "rationale": str, "adjusted_minutes": int}],
+  "total_qualifying_minutes": int,
+  "confidence": float
+}""",
+        messages=[{
+            "role": "user",
+            "content": f"Activities to classify:\n{json.dumps(new_activities, indent=2)}"
+        }],
+    )
+
+    classification = json.loads(response.content[0].text)
+    return {
+        "total_minutes_month": state["total_minutes_month"] + classification["total_qualifying_minutes"],
+        "confidence": classification["confidence"],
+        "status": "classified",
+    }
+
+
+def check_billing_eligibility(state: CCMRevenueState) -> dict:
+    """Verify CCM billing prerequisites: consent, care plan, 2+ chronic conditions."""
+    from app.services.fhir import FHIRService
+
+    fhir = FHIRService()
+
+    # Check for active care plan
+    care_plans = fhir.search("CarePlan", {
+        "patient": state["patient_id"],
+        "status": "active",
+        "category": "http://hl7.org/fhir/us/core/CodeSystem/careplan-category|assess-plan",
+    })
+
+    # Check for 2+ qualifying chronic conditions
+    conditions = fhir.search("Condition", {
+        "patient": state["patient_id"],
+        "clinical-status": "active",
+        "category": "problem-list-item",
+    })
+    chronic_conditions = [c for c in conditions if _is_chronic(c)]
+
+    # Check consent
+    consents = fhir.search("Consent", {
+        "patient": state["patient_id"],
+        "category": "ccm-consent",
+        "status": "active",
+    })
+
+    return {
+        "consent_verified": len(consents) > 0,
+        "care_plan_active": len(care_plans) > 0,
+        "qualifying_conditions": chronic_conditions[:5],  # Cap at 5 for state size
+        "status": "eligibility_checked",
+    }
+
+
+def route_by_threshold(state: CCMRevenueState) -> Literal["generate_claim", "continue_tracking"]:
+    """Route based on whether billing threshold is crossed."""
+    if not state["consent_verified"] or not state["care_plan_active"]:
+        return "continue_tracking"
+    if len(state["qualifying_conditions"]) < 2:
+        return "continue_tracking"
+    if state["total_minutes_month"] >= 20:
+        return "generate_claim"
+    return "continue_tracking"
+
+
+def generate_claim(state: CCMRevenueState) -> dict:
+    """Generate CCM claim draft with appropriate CPT code."""
+    minutes = state["total_minutes_month"]
+
+    cpt_codes = []
+    if minutes >= 60:
+        cpt_codes.append({"code": "99491", "description": "CCM 60+ minutes", "minutes": 60})
+        remaining = minutes - 60
+        while remaining >= 30:
+            cpt_codes.append({"code": "99437", "description": "CCM each additional 30 min", "minutes": 30})
+            remaining -= 30
+    elif minutes >= 40:
+        cpt_codes.append({"code": "99491", "description": "CCM 40+ minutes clinical staff", "minutes": 40})
+    elif minutes >= 20:
+        cpt_codes.append({"code": "99490", "description": "CCM 20+ minutes", "minutes": 20})
+
+    claim_draft = {
+        "patient_id": state["patient_id"],
+        "provider_id": state["provider_id"],
+        "service_period": state["calendar_month"],
+        "cpt_codes": cpt_codes,
+        "qualifying_conditions": [c.get("code", {}).get("coding", [{}])[0].get("code", "") for c in state["qualifying_conditions"]],
+        "total_minutes": minutes,
+        "activity_count": len(state["activities"]),
+    }
+
+    return {
+        "billing_threshold_crossed": True,
+        "cpt_codes_earned": cpt_codes,
+        "claim_draft": claim_draft,
+        "attestation_required": sum(c.get("minutes", 0) for c in cpt_codes) > 60,
+        "status": "claim_drafted",
+    }
+
+
+def continue_tracking(state: CCMRevenueState) -> dict:
+    """Not enough minutes yet -- continue tracking."""
+    return {"billing_threshold_crossed": False, "status": "tracking"}
+
+
+def billing_review(state: CCMRevenueState) -> Command[Literal["submit_claim", "generate_claim"]]:
+    """Human review of CCM claim before submission."""
+    decision = interrupt({
+        "type": "ccm_claim_review",
+        "patient_id": state["patient_id"],
+        "claim_draft": state["claim_draft"],
+        "total_minutes": state["total_minutes_month"],
+        "cpt_codes": state["cpt_codes_earned"],
+        "activities": state["activities"][-10:],  # Last 10 activities for context
+        "message": f"CCM claim ready: {state['total_minutes_month']} minutes, CPT {state['cpt_codes_earned'][0]['code']}",
+    })
+
+    if decision.get("approved"):
+        return Command(goto="submit_claim", update={"status": "approved"})
+    else:
+        return Command(goto="generate_claim", update={"status": "revision_requested"})
+
+
+def submit_claim(state: CCMRevenueState) -> dict:
+    """Submit the CCM claim via the Revenue Cycle pipeline."""
+    from app.services.claims import ClaimsService
+
+    claims = ClaimsService()
+    result = claims.submit_ccm_claim(state["claim_draft"])
+    return {"status": "submitted"}
+
+
+# --- Build graph ---
+
+ccm_builder = StateGraph(CCMRevenueState)
+
+ccm_builder.add_node("aggregate_activities", aggregate_activities)
+ccm_builder.add_node("classify_activity", classify_activity)
+ccm_builder.add_node("check_billing_eligibility", check_billing_eligibility)
+ccm_builder.add_node("generate_claim", generate_claim)
+ccm_builder.add_node("continue_tracking", continue_tracking)
+ccm_builder.add_node("billing_review", billing_review)
+ccm_builder.add_node("submit_claim", submit_claim)
+
+ccm_builder.add_edge(START, "aggregate_activities")
+ccm_builder.add_edge("aggregate_activities", "classify_activity")
+ccm_builder.add_edge("classify_activity", "check_billing_eligibility")
+ccm_builder.add_conditional_edges("check_billing_eligibility", route_by_threshold, {
+    "generate_claim": "generate_claim",
+    "continue_tracking": "continue_tracking",
+})
+ccm_builder.add_edge("generate_claim", "billing_review")
+# billing_review routes via Command(goto=...)
+ccm_builder.add_edge("submit_claim", END)
+ccm_builder.add_edge("continue_tracking", END)
+
+ccm_graph = ccm_builder.compile(checkpointer=checkpointer)
+```
+
+### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Activity classification | >= 0.90 | 0.80-0.90 | < 0.80 |
+| Billing eligibility check | >= 0.99 (rule-based) | N/A | Data quality issues |
+| Claim generation | N/A | N/A | ALWAYS human review |
+
+### Human-in-the-Loop Gates
+
+- **All claims** require billing staff review before submission
+- **Claims > $500/month** require physician attestation
+- **First-time CCM patients** require consent verification review
+
+### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Patient` | Demographics, eligibility |
+| Read | `CarePlan` | Active care plan (CCM prerequisite) |
+| Read | `Condition` | Chronic conditions (need 2+ for CCM) |
+| Read | `Encounter` | Recent encounters for time exclusion |
+| Read | `Communication` | Logged care coordination activities |
+| Read | `Consent` | CCM consent on file |
+| Write | `Claim` | Generated CCM claim |
+| Write | `Communication` | Activity log entries |
+
+### Revenue Impact
+
+- **Captured revenue**: $60-150/patient/month in CCM billing (CPT 99490: ~$42, 99491: ~$83)
+- **Scale**: With 5,000+ attributed lives across Theoria's network, potential capture of $300K-750K/month
+- **Current gap**: Estimated 70%+ of qualifying CCM time goes unbilled due to manual tracking burden
+
+---
+
+## 13. Agent 7: Shift Summary Agent (Theoria Medical)
+
+This agent generates structured handoff briefings when providers transition between shifts at post-acute facilities. Designed for Theoria's distributed model where physicians cover 50+ SNFs/ALFs. Solves information loss at shift boundaries -- the leading cause of adverse events in post-acute care.
+
+### Module Mapping
+
+- **Module B** (Provider Workflow): Shift handoff, patient prioritization, care continuity
+
+### Purpose
+
+When an outgoing provider logs off (or an incoming provider logs on), the agent scans all active patients across assigned facilities, retrieves each patient's recent context via [[ADR-006-context-rehydration]], priority-ranks them by acuity and pending actions, and generates a structured shift briefing. The incoming provider sees a prioritized list with P1 patients requiring immediate attention at the top.
+
+### Trigger
+
+- Provider login event (new shift starting)
+- Explicit handoff request from outgoing provider
+- Scheduled shift transition (configurable per facility)
+
+### State Definition
+
+```python
+class ShiftSummaryState(TypedDict):
+    # Input
+    outgoing_provider: Optional[str]              # Practitioner ID logging off
+    incoming_provider: str                        # Practitioner ID logging on
+    shift_id: str                                 # Unique shift identifier
+    facility_list: list[str]                      # Facility IDs this provider covers
+
+    # Patient Data
+    patient_summaries: Annotated[list[dict], add] # [{patient_id, name, facility, priority, summary, pending_items, vitals}]
+    total_patients: int
+    p1_count: int                                 # Immediate attention needed
+    p2_count: int                                 # Urgent within 1 hour
+
+    # Handoff Content
+    pending_items: list[dict]                     # [{patient_id, item, urgency, source}]
+    vitals_summary: Optional[dict]                # Aggregated vitals overview
+    handoff_narrative: Optional[str]              # AI-generated shift briefing
+    critical_alerts: list[dict]                   # Unacknowledged alerts from Guardian Agent
+
+    # Workflow
+    confidence: float
+    status: str                                   # scanning | summarizing | ready | delivered
+    error: Optional[str]
+```
+
+### Graph Definition
+
+```python
+def scan_active_patients(state: ShiftSummaryState) -> dict:
+    """Scan all active patients across assigned facilities."""
+    from app.services.fhir import FHIRService
+
+    fhir = FHIRService()
+    all_patients = []
+
+    for facility_id in state["facility_list"]:
+        patients = fhir.search("Encounter", {
+            "location": f"Location/{facility_id}",
+            "status": "in-progress",
+            "_include": "Encounter:subject",
+        })
+        all_patients.extend(patients)
+
+    return {
+        "total_patients": len(all_patients),
+        "patient_summaries": [{"patient_id": p["id"], "facility_id": p.get("facility_id")} for p in all_patients],
+        "status": "scanning",
+    }
+
+
+def rehydrate_all_patients(state: ShiftSummaryState) -> dict:
+    """Batch rehydrate context for all active patients."""
+    from app.services.context import ContextRehydrationEngine
+
+    engine = ContextRehydrationEngine()
+    enriched_summaries = []
+    pending_items = []
+    critical_alerts = []
+
+    for patient_stub in state["patient_summaries"]:
+        context = engine.rehydrate(
+            patient_id=patient_stub["patient_id"],
+            include=["conditions", "recent_vitals", "pending_orders", "alerts", "medications"],
+            lightweight=True,
+        )
+
+        enriched_summaries.append({
+            **patient_stub,
+            "conditions": context.conditions_summary,
+            "recent_vitals": context.recent_vitals,
+            "pending_orders": context.pending_orders,
+            "last_seen": context.last_encounter_time,
+            "medication_changes_24h": context.recent_med_changes,
+        })
+
+        pending_items.extend(context.pending_orders)
+        critical_alerts.extend(context.unacknowledged_alerts)
+
+    return {
+        "patient_summaries": enriched_summaries,
+        "pending_items": pending_items,
+        "critical_alerts": critical_alerts,
+        "status": "context_loaded",
+    }
+
+
+def prioritize_and_generate_briefing(state: ShiftSummaryState) -> dict:
+    """AI-powered priority ranking and shift briefing generation."""
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=8192,
+        system="""You are a clinical handoff assistant for post-acute care facilities (SNFs/ALFs).
+Generate a structured shift briefing from the patient data provided.
+
+PRIORITIZATION CRITERIA (in order):
+P1 (IMMEDIATE): Acute change in condition, unacknowledged critical alerts, unstable vitals
+P2 (URGENT): Pending stat orders, medication changes in last 24h, family meeting needed
+P3 (ROUTINE): Scheduled assessments, stable patients with active care plans
+P4 (INFORMATIONAL): Stable, no pending items, routine monitoring only
+
+OUTPUT FORMAT:
+{
+  "briefing_sections": [
+    {
+      "priority": "P1" | "P2" | "P3" | "P4",
+      "patients": [
+        {
+          "patient_id": str,
+          "one_liner": str,
+          "key_concerns": [str],
+          "pending_actions": [str],
+          "vitals_trend": str
+        }
+      ]
+    }
+  ],
+  "shift_narrative": str,
+  "p1_count": int,
+  "p2_count": int,
+  "confidence": float
+}
+
+RULES:
+- P1 patients MUST be listed first with clear action items
+- Use concise clinical language (not full sentences)
+- Include vital sign trends, not just current values
+- Flag patients with >3 medications changed in 24h
+- Do NOT include patient names -- use patient_id only
+- Keep the shift narrative under 500 words""",
+        messages=[{
+            "role": "user",
+            "content": f"""Patients ({state['total_patients']} total):\n{json.dumps(state['patient_summaries'], indent=2)}\n\nCritical Alerts:\n{json.dumps(state['critical_alerts'], indent=2)}\n\nPending Items:\n{json.dumps(state['pending_items'], indent=2)}"""
+        }],
+    )
+
+    briefing = json.loads(response.content[0].text)
+    return {
+        "handoff_narrative": briefing["shift_narrative"],
+        "p1_count": briefing["p1_count"],
+        "p2_count": briefing["p2_count"],
+        "confidence": briefing["confidence"],
+        "patient_summaries": briefing["briefing_sections"],
+        "status": "ready",
+    }
+
+
+def deliver_briefing(state: ShiftSummaryState) -> dict:
+    """Deliver the shift briefing to the incoming provider."""
+    from app.services.notifications import NotificationService
+
+    notifications = NotificationService()
+    notifications.deliver_shift_briefing(
+        provider_id=state["incoming_provider"],
+        shift_id=state["shift_id"],
+        briefing={
+            "narrative": state["handoff_narrative"],
+            "patient_summaries": state["patient_summaries"],
+            "p1_count": state["p1_count"],
+            "p2_count": state["p2_count"],
+            "critical_alerts": state["critical_alerts"],
+        },
+    )
+    return {"status": "delivered"}
+
+
+# --- Build graph ---
+
+shift_builder = StateGraph(ShiftSummaryState)
+
+shift_builder.add_node("scan_active_patients", scan_active_patients)
+shift_builder.add_node("rehydrate_all_patients", rehydrate_all_patients)
+shift_builder.add_node("prioritize_and_generate_briefing", prioritize_and_generate_briefing)
+shift_builder.add_node("deliver_briefing", deliver_briefing)
+
+shift_builder.add_edge(START, "scan_active_patients")
+shift_builder.add_edge("scan_active_patients", "rehydrate_all_patients")
+shift_builder.add_edge("rehydrate_all_patients", "prioritize_and_generate_briefing")
+shift_builder.add_edge("prioritize_and_generate_briefing", "deliver_briefing")
+shift_builder.add_edge("deliver_briefing", END)
+
+shift_graph = shift_builder.compile(checkpointer=checkpointer)
+```
+
+### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Priority ranking | >= 0.85 | 0.70-0.85 | < 0.70 |
+| Clinical narrative accuracy | >= 0.90 | 0.80-0.90 | < 0.80 |
+| P1 patient identification | N/A | N/A | ALWAYS flag for immediate review |
+
+### Human-in-the-Loop Gates
+
+- **P1 patients** always flagged for immediate provider review upon login
+- **Conflicting information** between outgoing provider notes and system data triggers review
+- **No fully autonomous actions** -- this agent is informational only
+
+### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Patient` | Demographics, facility assignment |
+| Read | `Encounter` | Active encounters across facilities |
+| Read | `Observation` | Recent vitals, device readings |
+| Read | `MedicationRequest` | Current medications, recent changes |
+| Read | `DiagnosticReport` | Pending or recent lab/imaging results |
+| Read | `ServiceRequest` | Pending orders |
+| Read | `Flag` | Active patient flags (fall risk, isolation, etc.) |
+| Write | `Communication` | Shift handoff record (audit trail) |
+
+### Clinical Impact
+
+- **Prevents information loss**: Shift handoff errors cause 80% of serious medical errors in SNFs
+- **Saves provider time**: Eliminates 30-45 minutes of manual chart review per shift start
+- **Scales across 50+ facilities**: Single provider covering multiple SNFs gets unified view
+
+---
+
+## 14. Agent 8: ACO REACH Quality Agent (Theoria Medical)
+
+This agent continuously monitors Theoria's attributed patient population under ACO REACH (via Empassion Health) for care gaps, quality measure compliance, and shared savings optimization. See [[Population-Health-Analytics]] for measure definitions (HEDIS, CMS Stars, MIPS).
+
+### Module Mapping
+
+- **Module E** (Population Health & Analytics): Care gap identification, quality measure calculation, shared savings projection
+
+### Purpose
+
+Scans the attributed patient population daily to identify care gaps (overdue HbA1c, missing blood pressure readings, advance care planning not documented, etc.), calculates the revenue impact of closing each gap, and triggers automated patient outreach via A2A to the Patient Communication Agent. Directly impacts Empassion Health ACO REACH shared savings distributions.
+
+### Trigger
+
+- Scheduled population scan (every 24 hours at 2:00 AM ET)
+- Real-time gap detection when new clinical data arrives (FHIR Subscription webhook)
+- On-demand quality dashboard refresh
+
+### State Definition
+
+```python
+class ACOQualityState(TypedDict):
+    # Input
+    scan_type: str                                # scheduled | realtime | on_demand
+    population_filter: Optional[dict]             # Filter criteria (facility, condition, payer)
+
+    # Population
+    attributed_lives: list[dict]                  # [{patient_id, facility_id, risk_score, conditions}]
+    total_attributed: int
+
+    # Gap Analysis
+    care_gaps: Annotated[list[dict], add]          # [{patient_id, measure_id, gap_type, days_overdue, revenue_impact, priority}]
+    gaps_by_measure: dict                          # {measure_id: count}
+    total_gaps: int
+    high_impact_gaps: int                          # Gaps with revenue_impact > $100
+
+    # Outreach
+    outreach_queue: list[dict]                     # [{patient_id, gap_type, channel, message_template}]
+    outreach_initiated: int
+
+    # Quality Scores
+    quality_scores: Optional[dict]                 # {measure_id: {numerator, denominator, rate, benchmark}}
+    shared_savings_projection: Optional[dict]      # {current_quality_score, projected_savings, gap_closure_impact}
+
+    # Workflow
+    confidence: float
+    status: str                                    # scanning | gaps_identified | outreach_queued | complete
+    error: Optional[str]
+```
+
+### Graph Definition
+
+```python
+def scan_population(state: ACOQualityState) -> dict:
+    """Scan attributed patient population for care gaps."""
+    from app.services.population import PopulationService
+
+    pop = PopulationService()
+    attributed = pop.get_attributed_lives(
+        filter_criteria=state.get("population_filter"),
+    )
+    return {
+        "attributed_lives": attributed,
+        "total_attributed": len(attributed),
+        "status": "scanning",
+    }
+
+
+def identify_care_gaps(state: ACOQualityState) -> dict:
+    """Rule-based gap identification against CMS/HEDIS quality measures."""
+    from app.services.quality import QualityMeasureEngine
+
+    engine = QualityMeasureEngine()
+    all_gaps = []
+    gaps_by_measure = {}
+
+    for patient in state["attributed_lives"]:
+        patient_gaps = engine.identify_gaps(
+            patient_id=patient["patient_id"],
+            measures=["HbA1c_control", "BP_control", "ACP_documented", "depression_screening",
+                       "fall_risk_assessment", "medication_reconciliation", "annual_wellness"],
+        )
+        for gap in patient_gaps:
+            gap["revenue_impact"] = engine.estimate_revenue_impact(gap)
+            all_gaps.append(gap)
+            gaps_by_measure[gap["measure_id"]] = gaps_by_measure.get(gap["measure_id"], 0) + 1
+
+    return {
+        "care_gaps": all_gaps,
+        "gaps_by_measure": gaps_by_measure,
+        "total_gaps": len(all_gaps),
+        "high_impact_gaps": sum(1 for g in all_gaps if g.get("revenue_impact", 0) > 100),
+        "status": "gaps_identified",
+    }
+
+
+def prioritize_and_project(state: ACOQualityState) -> dict:
+    """AI-powered gap prioritization and shared savings projection."""
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        system="""You are an ACO REACH quality analytics expert. Analyze the care gaps identified
+and prioritize them by combined clinical urgency and revenue impact.
+
+PRIORITIZATION FRAMEWORK:
+1. Clinical urgency (overdue by how long, patient risk score)
+2. Revenue impact (shared savings impact per gap closure)
+3. Outreach feasibility (is the patient reachable, are they engaged)
+4. Measure weight (CMS quality measure weights for ACO REACH)
+
+SHARED SAVINGS PROJECTION:
+- Calculate current quality score based on measure rates
+- Project quality score if top 20% of gaps are closed
+- Estimate shared savings impact (ACO REACH uses quality multiplier on shared savings)
+
+Return JSON:
+{
+  "prioritized_gaps": [{"patient_id": str, "measure_id": str, "priority_rank": int, "outreach_recommended": bool, "channel": str}],
+  "quality_scores": {"measure_id": {"numerator": int, "denominator": int, "rate": float, "benchmark": float}},
+  "shared_savings_projection": {"current_score": float, "projected_score": float, "estimated_savings_delta": float},
+  "confidence": float
+}""",
+        messages=[{
+            "role": "user",
+            "content": f"""Population: {state['total_attributed']} attributed lives\n\nCare Gaps ({state['total_gaps']} total):\n{json.dumps(state['care_gaps'][:100], indent=2)}\n\nGaps by Measure:\n{json.dumps(state['gaps_by_measure'], indent=2)}"""
+        }],
+    )
+
+    projection = json.loads(response.content[0].text)
+    return {
+        "quality_scores": projection["quality_scores"],
+        "shared_savings_projection": projection["shared_savings_projection"],
+        "confidence": projection["confidence"],
+        "status": "projected",
+    }
+
+
+def queue_outreach(state: ACOQualityState) -> dict:
+    """Queue patient outreach via A2A to Patient Communication Agent."""
+    from app.services.a2a import A2AClient
+
+    a2a = A2AClient()
+    outreach_queue = []
+    initiated = 0
+
+    for gap in state["care_gaps"][:50]:  # Top 50 gaps per run
+        if gap.get("outreach_recommended", True):
+            task_id = a2a.send_message(
+                target_agent="patient-communication",
+                task_type="care_gap_outreach",
+                payload={
+                    "patient_id": gap["patient_id"],
+                    "gap_type": gap["measure_id"],
+                    "message_type": "care_gap_reminder",
+                    "urgency": "normal",
+                },
+            )
+            outreach_queue.append({
+                "patient_id": gap["patient_id"],
+                "gap_type": gap["measure_id"],
+                "a2a_task_id": task_id,
+            })
+            initiated += 1
+
+    return {
+        "outreach_queue": outreach_queue,
+        "outreach_initiated": initiated,
+        "status": "outreach_queued",
+    }
+
+
+def write_measure_reports(state: ACOQualityState) -> dict:
+    """Persist quality measure results as FHIR MeasureReport resources."""
+    from app.services.fhir import FHIRService
+
+    fhir = FHIRService()
+    for measure_id, scores in (state.get("quality_scores") or {}).items():
+        fhir.create_measure_report(
+            measure_id=measure_id,
+            period=state.get("scan_type", "scheduled"),
+            numerator=scores.get("numerator", 0),
+            denominator=scores.get("denominator", 0),
+            rate=scores.get("rate", 0.0),
+        )
+    return {"status": "complete"}
+
+
+# --- Build graph ---
+
+aco_builder = StateGraph(ACOQualityState)
+
+aco_builder.add_node("scan_population", scan_population)
+aco_builder.add_node("identify_care_gaps", identify_care_gaps)
+aco_builder.add_node("prioritize_and_project", prioritize_and_project)
+aco_builder.add_node("queue_outreach", queue_outreach)
+aco_builder.add_node("write_measure_reports", write_measure_reports)
+
+aco_builder.add_edge(START, "scan_population")
+aco_builder.add_edge("scan_population", "identify_care_gaps")
+aco_builder.add_edge("identify_care_gaps", "prioritize_and_project")
+aco_builder.add_edge("prioritize_and_project", "queue_outreach")
+aco_builder.add_edge("queue_outreach", "write_measure_reports")
+aco_builder.add_edge("write_measure_reports", END)
+
+aco_quality_graph = aco_builder.compile(checkpointer=checkpointer)
+```
+
+### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Gap identification | >= 0.90 (rule-based from HEDIS/CMS) | 0.80-0.90 | < 0.80 |
+| Outreach prioritization | >= 0.85 | 0.70-0.85 | < 0.70 |
+| Quality score calculation | >= 0.99 (deterministic) | N/A | Data quality issues |
+| Clinical recommendations | N/A | N/A | ALWAYS requires provider sign-off |
+
+### Human-in-the-Loop Gates
+
+- **Clinical recommendations** within outreach messages require provider sign-off
+- **Quality reports** for external submission (CMS) require practice manager approval
+- **Outreach to patients** with active do-not-contact flags requires manual override
+
+### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Patient` | Attribution, demographics, risk scores |
+| Read | `Observation` | Lab results, vitals, screening results |
+| Read | `Condition` | Chronic conditions for HCC risk adjustment |
+| Read | `Procedure` | Completed screenings and interventions |
+| Read | `Immunization` | Vaccination history |
+| Write | `MeasureReport` | Calculated quality measures |
+| Write | `DetectedIssue` | Identified care gaps |
+| Write | `CommunicationRequest` | Outreach request to Patient Communication Agent |
+
+### Revenue Impact
+
+- **Shared savings**: ACO REACH quality multiplier directly impacts shared savings distribution from Empassion Health
+- **Gap closure revenue**: Each closed gap contributes to improved quality scores and higher shared savings rate
+- **HCC capture**: Proper diagnosis documentation increases risk-adjusted payments
+
+---
+
+## 15. Agent 9: SNF-to-Hospital Semantic Data Bridge (Theoria Medical)
+
+This agent solves Dr. Di Rezze's founding insight: the dangerous data void that exists when patients transition between post-acute care facilities and hospitals. When a patient is discharged from a hospital back to their SNF, this agent ingests the discharge summary, reconciles it against the SNF's existing record (ChartEasy), and generates a discrepancy report highlighting new medications, changed dosages, new diagnoses, and required follow-ups. See [[ADR-001-fhir-native-data-model]] for FHIR storage and [[ADR-008-a2a-agent-communication]] for inter-agent coordination.
+
+### Module Mapping
+
+- **Module H** (Integration): Cross-system data reconciliation, FHIR endpoint interoperability
+- **Module A** (Patient Identity): Patient matching across disparate systems
+
+### Purpose
+
+Automatically ingests hospital discharge summaries (structured FHIR or unstructured PDF/text), performs semantic reconciliation against the patient's pre-hospitalization record, and generates a structured discrepancy report for the attending provider. Every medication change, new diagnosis, and follow-up instruction is categorized by severity and presented for review.
+
+### Trigger
+
+- ADT (Admit/Discharge/Transfer) event indicating patient discharge from hospital back to SNF
+- Manual upload of discharge summary document
+- FHIR Subscription notification from hospital FHIR endpoint
+
+### State Definition
+
+```python
+class SNFBridgeState(TypedDict):
+    # Input
+    patient_id: str
+    hospital_source: str                          # Hospital system identifier
+    snf_destination: str                          # SNF facility ID
+    discharge_event_id: str                       # ADT event reference
+
+    # Discharge Data
+    discharge_summary_raw: Optional[str]          # Raw text (from PDF/OCR or FHIR DocumentReference)
+    discharge_summary_structured: Optional[dict]  # Parsed structured data
+    discharge_medications: list[dict]             # Medications at discharge
+    discharge_diagnoses: list[dict]               # Diagnoses at discharge
+    discharge_followups: list[dict]               # Follow-up instructions
+
+    # Pre-Hospitalization Record
+    pre_hospitalization_record: Optional[dict]    # Snapshot of SNF record before hospital admit
+    pre_medications: list[dict]                   # Medications before hospitalization
+    pre_conditions: list[dict]                    # Active conditions before hospitalization
+
+    # Reconciliation
+    reconciled_medications: list[dict]            # [{name, pre_dose, post_dose, status: new|changed|discontinued|unchanged, severity}]
+    reconciled_diagnoses: list[dict]              # [{code, description, status: new|resolved|unchanged, severity}]
+    discrepancies: list[dict]                     # [{type, description, severity: critical|moderate|informational, action_required}]
+
+    # Output
+    discrepancy_report: Optional[str]             # AI-generated reconciliation narrative
+    a2a_alert_sent: bool                          # Whether provider was notified via A2A
+
+    # Workflow
+    confidence: float
+    status: str                                   # ingesting | reconciling | report_generated | reviewed
+    error: Optional[str]
+```
+
+### Graph Definition
+
+```python
+def ingest_discharge_summary(state: SNFBridgeState) -> dict:
+    """Ingest discharge summary from hospital -- handles both FHIR and unstructured formats."""
+    from app.services.document_ingestion import DocumentIngestionService
+
+    ingestion = DocumentIngestionService()
+
+    # Try FHIR endpoint first
+    structured = ingestion.try_fhir_ingest(
+        hospital_id=state["hospital_source"],
+        patient_id=state["patient_id"],
+        event_id=state["discharge_event_id"],
+    )
+
+    if structured:
+        return {
+            "discharge_summary_structured": structured,
+            "discharge_medications": structured.get("medications", []),
+            "discharge_diagnoses": structured.get("diagnoses", []),
+            "discharge_followups": structured.get("followups", []),
+            "status": "ingested_structured",
+        }
+
+    # Fall back to unstructured (PDF/scanned document)
+    raw_text = ingestion.extract_text(
+        source=state["hospital_source"],
+        patient_id=state["patient_id"],
+        event_id=state["discharge_event_id"],
+    )
+
+    return {
+        "discharge_summary_raw": raw_text,
+        "status": "ingested_unstructured",
+    }
+
+
+def parse_unstructured_discharge(state: SNFBridgeState) -> dict:
+    """NLP extraction from unstructured discharge summary."""
+    if state.get("discharge_summary_structured"):
+        return {"status": "already_structured"}
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=8192,
+        system="""You are a clinical NLP system specializing in hospital discharge summary parsing.
+Extract all structured clinical data from the discharge summary.
+
+EXTRACT:
+1. Discharge medications (name, dose, route, frequency, new/changed/continued)
+2. Discharge diagnoses (description, ICD-10 code if mentioned, primary vs secondary)
+3. Follow-up instructions (appointment type, timeframe, specialist, reason)
+4. Vital signs at discharge
+5. Procedures performed during hospitalization
+6. Activity restrictions
+7. Diet orders
+8. Wound care instructions (if applicable)
+
+Return JSON:
+{
+  "medications": [{"name": str, "dose": str, "route": str, "frequency": str, "status": "new"|"changed"|"continued"}],
+  "diagnoses": [{"description": str, "icd10": str | null, "type": "primary"|"secondary"}],
+  "followups": [{"type": str, "timeframe": str, "specialist": str | null, "reason": str}],
+  "procedures": [{"name": str, "date": str | null}],
+  "restrictions": [str],
+  "diet": str | null,
+  "wound_care": str | null,
+  "confidence": float
+}
+
+RULES:
+- Extract EXACTLY what is documented -- do not infer or add information
+- If a field is ambiguous, mark confidence lower
+- Preserve medication brand/generic names as written""",
+        messages=[{
+            "role": "user",
+            "content": state["discharge_summary_raw"]
+        }],
+    )
+
+    parsed = json.loads(response.content[0].text)
+    return {
+        "discharge_summary_structured": parsed,
+        "discharge_medications": parsed["medications"],
+        "discharge_diagnoses": parsed["diagnoses"],
+        "discharge_followups": parsed["followups"],
+        "confidence": parsed["confidence"],
+        "status": "parsed",
+    }
+
+
+def retrieve_pre_hospitalization_record(state: SNFBridgeState) -> dict:
+    """Retrieve the patient's SNF record from before hospitalization."""
+    from app.services.fhir import FHIRService
+
+    fhir = FHIRService()
+    pre_record = fhir.get_patient_snapshot(
+        patient_id=state["patient_id"],
+        as_of=state["discharge_event_id"],  # Snapshot before admission
+        include=["MedicationRequest", "Condition", "CarePlan", "AllergyIntolerance"],
+    )
+
+    return {
+        "pre_hospitalization_record": pre_record,
+        "pre_medications": pre_record.get("medications", []),
+        "pre_conditions": pre_record.get("conditions", []),
+        "status": "pre_record_loaded",
+    }
+
+
+def reconcile(state: SNFBridgeState) -> dict:
+    """Semantic reconciliation of discharge data against pre-hospitalization record."""
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=8192,
+        system="""You are a medication reconciliation and clinical data reconciliation expert.
+Compare the hospital discharge data against the SNF pre-hospitalization record.
+
+MEDICATION RECONCILIATION:
+For each medication, determine:
+- NEW: Not in pre-hospitalization list (highest attention)
+- CHANGED: Same medication, different dose/frequency/route
+- DISCONTINUED: In pre-hospitalization list but not in discharge list
+- UNCHANGED: Same medication, same parameters
+
+DIAGNOSIS RECONCILIATION:
+- NEW: Diagnosis not previously documented
+- RESOLVED: Previously documented but not in discharge list
+- UNCHANGED: Present in both records
+
+SEVERITY CLASSIFICATION:
+- CRITICAL: New high-risk medications (anticoagulants, insulin, opioids), discontinued essential medications, new major diagnoses
+- MODERATE: Dose changes, new low-risk medications, resolved conditions
+- INFORMATIONAL: Unchanged items, minor documentation differences
+
+Return JSON:
+{
+  "reconciled_medications": [{"name": str, "pre_dose": str|null, "post_dose": str|null, "status": str, "severity": str, "note": str}],
+  "reconciled_diagnoses": [{"description": str, "code": str|null, "status": str, "severity": str}],
+  "discrepancies": [{"type": "medication"|"diagnosis"|"followup", "description": str, "severity": str, "action_required": str}],
+  "confidence": float
+}""",
+        messages=[{
+            "role": "user",
+            "content": f"""Pre-Hospitalization Medications:\n{json.dumps(state['pre_medications'], indent=2)}\n\nDischarge Medications:\n{json.dumps(state['discharge_medications'], indent=2)}\n\nPre-Hospitalization Conditions:\n{json.dumps(state['pre_conditions'], indent=2)}\n\nDischarge Diagnoses:\n{json.dumps(state['discharge_diagnoses'], indent=2)}\n\nFollow-up Instructions:\n{json.dumps(state['discharge_followups'], indent=2)}"""
+        }],
+    )
+
+    reconciliation = json.loads(response.content[0].text)
+    return {
+        "reconciled_medications": reconciliation["reconciled_medications"],
+        "reconciled_diagnoses": reconciliation["reconciled_diagnoses"],
+        "discrepancies": reconciliation["discrepancies"],
+        "confidence": reconciliation["confidence"],
+        "status": "reconciled",
+    }
+
+
+def generate_discrepancy_report(state: SNFBridgeState) -> dict:
+    """Generate human-readable discrepancy report for the attending provider."""
+    critical_count = sum(1 for d in state["discrepancies"] if d.get("severity") == "critical")
+    moderate_count = sum(1 for d in state["discrepancies"] if d.get("severity") == "moderate")
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        system="""Generate a concise clinical reconciliation report for the attending physician.
+
+FORMAT:
+## Transition of Care Reconciliation Report
+### Critical Items (Action Required)
+[List critical discrepancies with clear action items]
+### Medication Changes
+[Table: medication | pre-hospital | post-hospital | status | action]
+### New Diagnoses
+[List with ICD-10 codes if available]
+### Follow-up Requirements
+[Ordered by urgency]
+### Summary
+[2-3 sentence executive summary]
+
+Use clinical language. Be precise. Flag anything that could cause a medication error.""",
+        messages=[{
+            "role": "user",
+            "content": f"""Reconciled Medications:\n{json.dumps(state['reconciled_medications'], indent=2)}\n\nReconciled Diagnoses:\n{json.dumps(state['reconciled_diagnoses'], indent=2)}\n\nDiscrepancies:\n{json.dumps(state['discrepancies'], indent=2)}"""
+        }],
+    )
+
+    return {
+        "discrepancy_report": response.content[0].text,
+        "status": "report_generated",
+    }
+
+
+def alert_provider(state: SNFBridgeState) -> dict:
+    """Send reconciliation report to attending provider via A2A."""
+    from app.services.a2a import A2AClient
+
+    a2a = A2AClient()
+    critical_count = sum(1 for d in state["discrepancies"] if d.get("severity") == "critical")
+
+    priority = "urgent" if critical_count > 0 else "normal"
+
+    a2a.send_message(
+        target_agent="patient-communication",
+        task_type="provider_alert",
+        payload={
+            "patient_id": state["patient_id"],
+            "alert_type": "transition_of_care_reconciliation",
+            "priority": priority,
+            "critical_items": critical_count,
+            "report_summary": state["discrepancy_report"][:500],
+        },
+    )
+    return {"a2a_alert_sent": True, "status": "alerted"}
+
+
+def physician_review(state: SNFBridgeState) -> dict:
+    """ALL medication changes require physician/pharmacist review."""
+    decision = interrupt({
+        "type": "transition_reconciliation_review",
+        "patient_id": state["patient_id"],
+        "discrepancy_report": state["discrepancy_report"],
+        "reconciled_medications": state["reconciled_medications"],
+        "reconciled_diagnoses": state["reconciled_diagnoses"],
+        "discrepancies": state["discrepancies"],
+        "confidence": state["confidence"],
+        "message": "Review transition of care reconciliation. ALL medication changes require approval before updating patient record.",
+    })
+    return {
+        "status": "reviewed",
+    }
+
+
+# --- Build graph ---
+
+bridge_builder = StateGraph(SNFBridgeState)
+
+bridge_builder.add_node("ingest_discharge_summary", ingest_discharge_summary)
+bridge_builder.add_node("parse_unstructured_discharge", parse_unstructured_discharge)
+bridge_builder.add_node("retrieve_pre_hospitalization_record", retrieve_pre_hospitalization_record)
+bridge_builder.add_node("reconcile", reconcile)
+bridge_builder.add_node("generate_discrepancy_report", generate_discrepancy_report)
+bridge_builder.add_node("alert_provider", alert_provider)
+bridge_builder.add_node("physician_review", physician_review)
+
+bridge_builder.add_edge(START, "ingest_discharge_summary")
+bridge_builder.add_edge("ingest_discharge_summary", "parse_unstructured_discharge")
+bridge_builder.add_edge("parse_unstructured_discharge", "retrieve_pre_hospitalization_record")
+bridge_builder.add_edge("retrieve_pre_hospitalization_record", "reconcile")
+bridge_builder.add_edge("reconcile", "generate_discrepancy_report")
+bridge_builder.add_edge("generate_discrepancy_report", "alert_provider")
+bridge_builder.add_edge("alert_provider", "physician_review")
+bridge_builder.add_edge("physician_review", END)
+
+bridge_graph = bridge_builder.compile(checkpointer=checkpointer)
+```
+
+### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Medication matching | >= 0.90 | 0.80-0.90 | < 0.80 |
+| Diagnosis reconciliation | >= 0.85 | 0.75-0.85 | < 0.75 |
+| Follow-up extraction | >= 0.80 | 0.70-0.80 | < 0.70 |
+| Unstructured document parsing | >= 0.85 | 0.75-0.85 | < 0.75 |
+
+### Human-in-the-Loop Gates
+
+- **ALL medication changes** require pharmacist/physician review before updating the patient record
+- **New diagnoses** require attending physician confirmation
+- **Discontinued essential medications** trigger immediate physician alert (P1 equivalent)
+
+### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Patient` | Demographics, cross-system identifiers |
+| Read | `MedicationRequest` | Pre-hospitalization medication list |
+| Read | `Condition` | Pre-hospitalization active conditions |
+| Read | `DocumentReference` | Discharge summary document |
+| Read | `Encounter` | Hospital admission/discharge events |
+| Read | `DiagnosticReport` | Hospital lab/imaging results |
+| Write | `MedicationRequest` | Updated medication orders (after physician review) |
+| Write | `Condition` | New diagnoses (after physician confirmation) |
+| Write | `DocumentReference` | Reconciliation report |
+| Write | `Provenance` | Audit trail of reconciliation actions |
+
+### Clinical Impact
+
+- **Solves Di Rezze's founding problem**: The "false sense of security" when patients return from hospital to SNF without proper data reconciliation
+- **Medication safety**: Catches drug interactions, duplicate therapies, and omitted essential medications at transitions
+- **Reduces readmissions**: Proper transition reconciliation reduces 30-day readmission rates by 20-30%
+
+---
+
+## 16. Agent 10: Generative Care Plan Optimizer (Theoria Medical)
+
+This agent functions as an AI super-consultant, synthesizing longitudinal patient data with the latest clinical guidelines (via RAG from pgvector) to generate proactive care recommendations. Designed to scale top-clinician expertise across Theoria's entire 200+ facility network.
+
+### Module Mapping
+
+- **Module B** (Provider Workflow): Clinical decision support, care plan updates
+- **Module E** (Population Health): Evidence-based population interventions
+
+### Purpose
+
+Analyzes a patient's complete longitudinal record (vitals, labs, medications, device readings, encounter notes) against clinical guidelines stored in pgvector, identifies deterioration patterns before they become acute, and generates evidence-based care recommendations with confidence scores and literature citations. Every recommendation includes the evidence level (A/B/C) and requires physician approval.
+
+### Trigger
+
+- Scheduled weekly analysis per patient
+- Triggered by significant vital sign change (from Guardian Agent via A2A)
+- On-demand physician request ("What should we consider for this patient?")
+
+### State Definition
+
+```python
+class CareOptimizationState(TypedDict):
+    # Input
+    patient_id: str
+    trigger_type: str                             # scheduled | vital_change | on_demand
+    trigger_context: Optional[dict]               # Context from triggering event
+
+    # Longitudinal Data
+    longitudinal_data: Optional[dict]             # Comprehensive patient history
+    vitals_trend: list[dict]                      # Last 90 days of vitals
+    labs_history: list[dict]                      # Last 12 months of lab results
+    medication_history: list[dict]                # Full medication history
+    device_readings: list[dict]                   # RPM device data (if available)
+
+    # Evidence
+    evidence_sources: list[dict]                  # [{guideline, citation, relevance_score}]
+    rag_context: Optional[str]                    # Retrieved guideline text from pgvector
+
+    # Recommendations
+    recommendations: list[dict]                   # [{action, evidence_level: A|B|C, confidence, rationale, citations}]
+    risk_predictions: list[dict]                  # [{condition, probability, timeframe, preventive_action}]
+
+    # Review
+    approval_status: Optional[str]                # pending | approved | partially_approved | rejected
+    physician_notes: Optional[str]
+
+    # Workflow
+    confidence: float
+    status: str                                   # gathering | analyzing | recommendations_ready | reviewed
+    error: Optional[str]
+```
+
+### Graph Definition
+
+```python
+def gather_longitudinal_data(state: CareOptimizationState) -> dict:
+    """Gather comprehensive patient history from FHIR store."""
+    from app.services.fhir import FHIRService
+    from app.services.context import ContextRehydrationEngine
+
+    fhir = FHIRService()
+    context = ContextRehydrationEngine()
+
+    # Pull full longitudinal record
+    record = context.rehydrate(
+        patient_id=state["patient_id"],
+        include=["conditions", "medications", "vitals_90d", "labs_12m",
+                 "encounters", "care_plans", "device_readings", "allergies"],
+        depth="full",
+    )
+
+    return {
+        "longitudinal_data": record.full_summary,
+        "vitals_trend": record.vitals_trend,
+        "labs_history": record.labs_history,
+        "medication_history": record.medication_history,
+        "device_readings": record.device_readings or [],
+        "status": "gathered",
+    }
+
+
+def retrieve_clinical_guidelines(state: CareOptimizationState) -> dict:
+    """RAG retrieval of relevant clinical guidelines from pgvector."""
+    from app.services.embeddings import get_embedding
+
+    # Build query from patient's active conditions
+    conditions_text = " ".join([
+        c.get("display", "") for c in (state.get("longitudinal_data", {}).get("conditions", []))
+    ])
+
+    embedding = get_embedding(f"Clinical guidelines for: {conditions_text}")
+
+    import psycopg2
+    with psycopg2.connect(POSTGRES_URI) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT chunk_text, metadata, 1 - (embedding <=> %s::vector) as similarity
+                FROM clinical_guidelines_embeddings
+                WHERE 1 - (embedding <=> %s::vector) > 0.70
+                ORDER BY embedding <=> %s::vector
+                LIMIT 10
+            """, (embedding, embedding, embedding))
+
+            guidelines = [
+                {
+                    "text": row[0],
+                    "metadata": row[1],
+                    "relevance": float(row[2]),
+                }
+                for row in cur.fetchall()
+            ]
+
+    return {
+        "evidence_sources": [{"guideline": g["metadata"].get("source", "Unknown"), "citation": g["metadata"].get("citation", ""), "relevance_score": g["relevance"]} for g in guidelines],
+        "rag_context": "\n\n".join([g["text"] for g in guidelines]),
+        "status": "guidelines_retrieved",
+    }
+
+
+def generate_recommendations(state: CareOptimizationState) -> dict:
+    """Generate evidence-based care recommendations."""
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=8192,
+        system="""You are an evidence-based clinical decision support system. Generate proactive
+care recommendations by synthesizing the patient's longitudinal data with clinical guidelines.
+
+EVIDENCE LEVELS:
+- A: Strong evidence from RCTs or meta-analyses
+- B: Moderate evidence from well-designed studies
+- C: Expert consensus or case series
+
+RECOMMENDATION CATEGORIES:
+1. Medication adjustments (dose changes, additions, deprescribing)
+2. Diagnostic workup (labs, imaging, referrals to order)
+3. Preventive interventions (screenings, vaccinations, lifestyle modifications)
+4. Care plan modifications (frequency of visits, RPM parameter changes, goal updates)
+5. Risk predictions (conditions likely to develop/worsen based on trends)
+
+Return JSON:
+{
+  "recommendations": [
+    {
+      "action": str,
+      "category": "medication"|"diagnostic"|"preventive"|"care_plan"|"risk",
+      "evidence_level": "A"|"B"|"C",
+      "confidence": float,
+      "rationale": str,
+      "citations": [str],
+      "urgency": "immediate"|"next_visit"|"next_month"|"routine",
+      "contraindications_checked": [str]
+    }
+  ],
+  "risk_predictions": [
+    {
+      "condition": str,
+      "probability": float,
+      "timeframe": str,
+      "preventive_action": str,
+      "supporting_data": [str]
+    }
+  ],
+  "overall_confidence": float,
+  "clinical_summary": str
+}
+
+CRITICAL RULES:
+- NEVER recommend without evidence citation
+- ALWAYS check for contraindications against current medications and allergies
+- Flag drug-drug interactions explicitly
+- Evidence Level C recommendations require attending physician (not NP/PA) approval
+- Include deprescribing recommendations when appropriate (polypharmacy in elderly SNF patients)
+- Factor in patient age, renal function, and hepatic function for medication recommendations""",
+        messages=[{
+            "role": "user",
+            "content": f"""Patient Data:\n{json.dumps(state['longitudinal_data'], indent=2)}\n\nVitals Trend (90 days):\n{json.dumps(state['vitals_trend'][:30], indent=2)}\n\nLabs (12 months):\n{json.dumps(state['labs_history'][:20], indent=2)}\n\nDevice Readings:\n{json.dumps(state['device_readings'][:20], indent=2)}\n\nClinical Guidelines:\n{state.get('rag_context', 'No guidelines retrieved')}"""
+        }],
+    )
+
+    result = json.loads(response.content[0].text)
+    return {
+        "recommendations": result["recommendations"],
+        "risk_predictions": result.get("risk_predictions", []),
+        "confidence": result["overall_confidence"],
+        "status": "recommendations_ready",
+    }
+
+
+def physician_review_recommendations(state: CareOptimizationState) -> dict:
+    """ALWAYS requires physician review -- this is clinical decision support, not autonomous care."""
+    decision = interrupt({
+        "type": "care_plan_optimization_review",
+        "patient_id": state["patient_id"],
+        "recommendations": state["recommendations"],
+        "risk_predictions": state["risk_predictions"],
+        "evidence_sources": state["evidence_sources"],
+        "confidence": state["confidence"],
+        "message": "Review AI-generated care recommendations. All medication changes require physician approval.",
+    })
+
+    return {
+        "approval_status": decision.get("status", "pending"),
+        "physician_notes": decision.get("notes", ""),
+        "status": "reviewed",
+    }
+
+
+# --- Build graph ---
+
+optimizer_builder = StateGraph(CareOptimizationState)
+
+optimizer_builder.add_node("gather_longitudinal_data", gather_longitudinal_data)
+optimizer_builder.add_node("retrieve_clinical_guidelines", retrieve_clinical_guidelines)
+optimizer_builder.add_node("generate_recommendations", generate_recommendations)
+optimizer_builder.add_node("physician_review_recommendations", physician_review_recommendations)
+
+optimizer_builder.add_edge(START, "gather_longitudinal_data")
+optimizer_builder.add_edge("gather_longitudinal_data", "retrieve_clinical_guidelines")
+optimizer_builder.add_edge("retrieve_clinical_guidelines", "generate_recommendations")
+optimizer_builder.add_edge("generate_recommendations", "physician_review_recommendations")
+optimizer_builder.add_edge("physician_review_recommendations", END)
+
+optimizer_graph = optimizer_builder.compile(checkpointer=checkpointer)
+```
+
+### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Evidence-matched recommendations (Level A/B) | >= 0.90 | 0.80-0.90 | < 0.80 |
+| Novel combinations (Level C) | N/A | N/A | ALWAYS physician review |
+| Risk predictions | >= 0.85 | 0.70-0.85 | < 0.70 |
+| Medication recommendations | N/A | N/A | ALWAYS physician review |
+
+### Human-in-the-Loop Gates
+
+- **ALL recommendations** require physician review (this is decision SUPPORT, not autonomous care)
+- **Medication changes** require attending physician approval (NP/PA cannot approve Level C)
+- **Evidence Level C** recommendations require explicit attending physician sign-off
+- **Deprescribing** recommendations require pharmacist + physician review
+
+### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Patient` | Demographics, age, clinical context |
+| Read | `CarePlan` | Active care plan for update context |
+| Read | `Observation` | Vitals, labs, device readings (longitudinal) |
+| Read | `MedicationRequest` | Full medication history |
+| Read | `Condition` | Active and historical conditions |
+| Read | `AllergyIntolerance` | Allergy/interaction checking |
+| Read | `DocumentReference` | Clinical notes for context |
+| Write | `CarePlan` | Updated care plan (after physician approval) |
+| Write | `RequestGroup` | Grouped order recommendations |
+| Write | `ClinicalImpression` | AI-generated clinical assessment |
+
+### Clinical / Revenue Impact
+
+- **Scales expertise**: Top-quartile clinical decision-making replicated across 200+ facilities
+- **Prevents adverse events**: Proactive intervention before deterioration becomes acute
+- **Kill shot example**: "Weight up 4 lbs in 48h + nocturnal O2 desaturation -> 85% predictive of CHF exacerbation within 72h. Recommend: 1) 40mg Lasix IV Push, 2) Stat telemedicine check-in, 3) Daily weight protocol"
+- **Revenue**: Better clinical outcomes = higher ACO REACH quality scores = larger shared savings distribution
+
+---
+
+## 17. Agent 11: Dynamic Staffing & Resource Allocation Agent (Theoria Medical)
+
+This agent optimizes provider scheduling and staffing across Theoria's 200+ post-acute facilities. Uses census data, acuity predictions, and cost modeling to generate cost-optimal staffing recommendations. Directly addresses Amulet Capital Partners' margin expansion mandate.
+
+### Module Mapping
+
+- **Module B** (Provider Workflow): Provider scheduling, workload optimization
+- **Module F** (Patient Engagement): Census management, capacity planning
+
+### Purpose
+
+Integrates scheduling data, facility census, patient acuity scores, and provider availability to predict staffing needs 72 hours in advance. Generates cost-optimal provider assignments that balance travel time, provider competencies, patient needs, and budget constraints. Reduces reliance on expensive locum tenens providers ($2-5K/day).
+
+### Trigger
+
+- Nightly optimization run (2:00 AM ET, after ACO Quality Agent completes)
+- Real-time surge detection (census spike, mass admit/discharge events)
+- Manual request from operations team
+
+### State Definition
+
+```python
+class StaffingOptimizationState(TypedDict):
+    # Input
+    optimization_window: str                      # "72h" | "1w" | "2w"
+    trigger_type: str                             # nightly | surge | manual
+
+    # Facility Data
+    facilities: list[dict]                        # [{facility_id, name, census, capacity, acuity_distribution, current_providers, location}]
+    total_facilities: int
+    facilities_over_capacity: int
+    facilities_under_staffed: int
+
+    # Provider Data
+    providers: list[dict]                         # [{provider_id, name, availability, location, competencies, cost_rate, current_assignments}]
+    total_providers: int
+
+    # Predictions
+    census_predictions: list[dict]                # [{facility_id, date, predicted_census, confidence}]
+    surge_risk: list[dict]                        # [{facility_id, risk_level, trigger}]
+
+    # Optimization Results
+    schedule_recommendations: list[dict]           # [{provider_id, facility_id, shift, date, rationale, cost}]
+    cost_analysis: Optional[dict]                  # {current_cost, optimized_cost, savings, locum_avoided}
+
+    # Workflow
+    confidence: float
+    status: str                                    # gathering | predicting | optimizing | ready | approved
+    error: Optional[str]
+```
+
+### Graph Definition
+
+```python
+def gather_facility_data(state: StaffingOptimizationState) -> dict:
+    """Gather current census, acuity, and staffing data across all facilities."""
+    from app.services.facilities import FacilityService
+
+    facilities = FacilityService()
+    facility_data = facilities.get_all_with_census()
+
+    over_capacity = sum(1 for f in facility_data if f["census"] > f["capacity"] * 0.95)
+    under_staffed = sum(1 for f in facility_data if f["current_providers"] < f["required_providers"])
+
+    return {
+        "facilities": facility_data,
+        "total_facilities": len(facility_data),
+        "facilities_over_capacity": over_capacity,
+        "facilities_under_staffed": under_staffed,
+        "status": "facility_data_gathered",
+    }
+
+
+def gather_provider_data(state: StaffingOptimizationState) -> dict:
+    """Gather provider availability, competencies, and current assignments."""
+    from app.services.scheduling import SchedulingService
+
+    scheduling = SchedulingService()
+    provider_data = scheduling.get_all_providers_with_availability(
+        window=state["optimization_window"],
+    )
+
+    return {
+        "providers": provider_data,
+        "total_providers": len(provider_data),
+        "status": "provider_data_gathered",
+    }
+
+
+def predict_census(state: StaffingOptimizationState) -> dict:
+    """Predict census trends for the optimization window."""
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        system="""You are a healthcare operations analytics system. Predict census trends for
+post-acute care facilities based on current census, historical patterns, and known admissions/discharges.
+
+FACTORS TO CONSIDER:
+- Day of week patterns (higher admissions Mon-Wed, higher discharges Fri)
+- Seasonal patterns (flu season, holiday staffing)
+- Scheduled admissions/discharges
+- Historical census volatility per facility
+- Current census trajectory (trending up/down/stable)
+
+Return JSON:
+{
+  "predictions": [{"facility_id": str, "date": str, "predicted_census": int, "confidence": float, "trend": "up"|"down"|"stable"}],
+  "surge_risks": [{"facility_id": str, "risk_level": "high"|"moderate"|"low", "trigger": str}],
+  "confidence": float
+}""",
+        messages=[{
+            "role": "user",
+            "content": f"""Facilities ({state['total_facilities']}):\n{json.dumps(state['facilities'][:30], indent=2)}\n\nOptimization Window: {state['optimization_window']}"""
+        }],
+    )
+
+    predictions = json.loads(response.content[0].text)
+    return {
+        "census_predictions": predictions["predictions"],
+        "surge_risk": predictions["surge_risks"],
+        "confidence": predictions["confidence"],
+        "status": "predicted",
+    }
+
+
+def optimize_staffing(state: StaffingOptimizationState) -> dict:
+    """Generate cost-optimal staffing recommendations."""
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=8192,
+        system="""You are a healthcare workforce optimization system. Generate cost-optimal
+provider scheduling recommendations.
+
+OPTIMIZATION OBJECTIVES (in priority order):
+1. Patient safety: Adequate staffing for acuity levels (hard constraint)
+2. Regulatory compliance: Meet state-mandated staffing ratios (hard constraint)
+3. Cost minimization: Prefer employed providers over locum tenens
+4. Travel optimization: Minimize provider travel time between facilities
+5. Continuity of care: Prefer same provider at same facility when possible
+6. Provider satisfaction: Respect provider schedule preferences when possible
+
+CONSTRAINTS:
+- No provider can work > 12 hours per shift
+- No provider can work > 60 hours per week
+- High-acuity facilities require MD coverage (not NP/PA alone)
+- Travel time between facilities must allow 30-min buffer
+
+Return JSON:
+{
+  "schedule_recommendations": [
+    {
+      "provider_id": str,
+      "facility_id": str,
+      "shift": "day"|"evening"|"night",
+      "date": str,
+      "rationale": str,
+      "cost": float,
+      "replaces_locum": bool
+    }
+  ],
+  "cost_analysis": {
+    "current_weekly_cost": float,
+    "optimized_weekly_cost": float,
+    "weekly_savings": float,
+    "locum_shifts_avoided": int,
+    "locum_cost_avoided": float
+  },
+  "unfilled_shifts": [{"facility_id": str, "shift": str, "date": str, "reason": str}],
+  "confidence": float
+}""",
+        messages=[{
+            "role": "user",
+            "content": f"""Providers ({state['total_providers']}):\n{json.dumps(state['providers'][:50], indent=2)}\n\nFacilities:\n{json.dumps(state['facilities'][:30], indent=2)}\n\nCensus Predictions:\n{json.dumps(state['census_predictions'][:50], indent=2)}\n\nSurge Risks:\n{json.dumps(state['surge_risk'], indent=2)}"""
+        }],
+    )
+
+    optimization = json.loads(response.content[0].text)
+    return {
+        "schedule_recommendations": optimization["schedule_recommendations"],
+        "cost_analysis": optimization["cost_analysis"],
+        "confidence": optimization["confidence"],
+        "status": "optimized",
+    }
+
+
+def operations_review(state: StaffingOptimizationState) -> dict:
+    """Operations team review of staffing recommendations."""
+    changes_count = len(state["schedule_recommendations"])
+    savings = state.get("cost_analysis", {}).get("weekly_savings", 0)
+
+    # Large changes require ops director approval
+    requires_director = changes_count > 5 or savings > 10000
+
+    decision = interrupt({
+        "type": "staffing_optimization_review",
+        "schedule_recommendations": state["schedule_recommendations"],
+        "cost_analysis": state["cost_analysis"],
+        "total_changes": changes_count,
+        "requires_director_approval": requires_director,
+        "message": f"Staffing optimization: {changes_count} schedule changes, ${savings:.0f}/week savings",
+    })
+
+    return {
+        "status": "approved" if decision.get("approved") else "rejected",
+    }
+
+
+# --- Build graph ---
+
+staffing_builder = StateGraph(StaffingOptimizationState)
+
+staffing_builder.add_node("gather_facility_data", gather_facility_data)
+staffing_builder.add_node("gather_provider_data", gather_provider_data)
+staffing_builder.add_node("predict_census", predict_census)
+staffing_builder.add_node("optimize_staffing", optimize_staffing)
+staffing_builder.add_node("operations_review", operations_review)
+
+staffing_builder.add_edge(START, "gather_facility_data")
+staffing_builder.add_edge("gather_facility_data", "gather_provider_data")
+staffing_builder.add_edge("gather_provider_data", "predict_census")
+staffing_builder.add_edge("predict_census", "optimize_staffing")
+staffing_builder.add_edge("optimize_staffing", "operations_review")
+staffing_builder.add_edge("operations_review", END)
+
+staffing_graph = staffing_builder.compile(checkpointer=checkpointer)
+```
+
+### Confidence Thresholds
+
+| Task | Auto-Execute | Flag for Review | Full Escalation |
+|------|-------------|-----------------|-----------------|
+| Census prediction (72h) | >= 0.85 | 0.70-0.85 | < 0.70 |
+| Cost optimization | >= 0.80 | 0.65-0.80 | < 0.65 |
+| Surge detection | >= 0.85 | 0.70-0.85 | < 0.70 |
+| Schedule changes | N/A | N/A | ALWAYS operations review |
+
+### Human-in-the-Loop Gates
+
+- **All schedule changes** require operations team review
+- **Changes affecting > 5 providers** require ops director approval
+- **Cost savings > $10K/week** require ops director + finance review
+- **Surge response** (emergency staffing) can bypass normal approval with shift supervisor authorization
+
+### FHIR Resources
+
+| Operation | Resource | Description |
+|-----------|----------|-------------|
+| Read | `Schedule` | Provider schedules |
+| Read | `Practitioner` | Provider demographics, competencies |
+| Read | `PractitionerRole` | Provider-facility assignments |
+| Read | `Location` | Facility details, capacity, coordinates |
+| Read | `Organization` | Facility organization hierarchy |
+| Read | `Encounter` | Current census (active encounters) |
+| Write | `Schedule` | Updated provider schedules (after approval) |
+| Write | `PractitionerRole` | Updated provider-facility assignments |
+
+### Revenue Impact
+
+- **Reduces locum tenens costs**: Each locum shift avoided saves $2-5K/day
+- **Addresses Amulet Capital mandate**: PE partner requires margin expansion; staffing is the largest cost center
+- **Prevents understaffing penalties**: State regulators fine facilities for staffing ratio violations
+- **Projected savings**: 10-15% reduction in total provider staffing costs across Theoria network
+
+---
+
 ## Summary
 
-This document covers the complete implementation of four LangGraph-based AI agents for MedOS:
+This document covers the complete implementation of eleven LangGraph-based AI agents for MedOS:
 
+**Foundation Agents (1-4):**
 1. **Clinical Documentation Agent** -- audio to finalized SOAP note with codes
 2. **Prior Authorization Agent** -- end-to-end PA lifecycle management
 3. **Denial Management Agent** -- denial analysis, evidence gathering, appeal generation
 4. **AI Coding Agent** -- NLP-based diagnosis extraction and code mapping with pgvector
 
+**Theoria Medical Agents (5-11):**
+5. **Post-Acute Guardian Agent** -- wearable device monitoring, CHF prevention, P1-P4 alert triage
+6. **CCM Revenue Agent** -- chronic care management time tracking, CPT 99490/99491 billing
+7. **Shift Summary Agent** -- provider handoff briefings across 50+ facilities
+8. **ACO REACH Quality Agent** -- care gap identification, shared savings optimization
+9. **SNF-to-Hospital Semantic Data Bridge** -- discharge reconciliation, medication safety at transitions
+10. **Generative Care Plan Optimizer** -- AI super-consultant, evidence-based recommendations via RAG
+11. **Dynamic Staffing & Resource Allocation Agent** -- workforce optimization, locum cost reduction
+
 Each agent shares common infrastructure: encrypted PostgreSQL checkpointing, HIPAA-compliant LLM wrapper with PHI scrubbing and audit logging, Langfuse observability, Redis-based task queuing, and ECS Fargate worker deployment with auto-scaling.
+
+The Theoria Medical agents (5-11) are specifically designed for post-acute care at scale, leveraging [[ADR-006-context-rehydration]] for cross-facility context, [[ADR-007-wearable-iot-integration]] for device data, and [[ADR-008-a2a-agent-communication]] for inter-agent coordination. They target the unique challenges of managing 200+ SNF/ALF facilities under ACO REACH value-based contracts.
 
 The human-in-the-loop pattern using LangGraph's `interrupt()` and `Command(resume=...)` is central to every agent. Healthcare AI cannot be fully autonomous -- the system is designed so that AI handles the heavy lifting while clinicians retain final authority over clinical decisions.
 

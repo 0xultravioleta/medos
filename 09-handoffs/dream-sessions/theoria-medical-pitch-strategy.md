@@ -18,7 +18,7 @@ tags:
 > Combines intelligence from 4 dream sessions with current platform capabilities.
 
 **Target:** Dr. Justin Di Rezze — CEO & Founder, Theoria Medical
-**Related:** [[EPIC-016-theoria-medical-pilot]] | [[HEALTHCARE_OS_MASTERPLAN]] | [[agent-architecture]]
+**Related:** [[EPIC-016-theoria-medical-pilot]] | [[HEALTHCARE_OS_MASTERPLAN]] | [[agent-architecture]] | [[theoria-demo-script]]
 
 ---
 
@@ -82,32 +82,32 @@ Dr. Di Rezze is a **systems-level diagnostician** who diagnosed a pathology not 
 | Security & HIPAA compliance | "Compliance engine" | BUILT — Field encryption, audit, PHI filter | EPIC-010 |
 | 522+ backend tests | Quality assurance | BUILT | pytest |
 
-### What's ARCHITECTURED (design exists, needs frontend)
+### What Was ARCHITECTURED -- Now BUILT and DEPLOYED (Sprint S4F)
 
-| Capability | Dream Session Reference | Status | Gap |
-|------------|------------------------|--------|-----|
-| RPM billing (CPT 99453-99458) | "Zero-Touch Revenue Agent" | Architecture in Patient-Engagement-Patterns.md | Needs dedicated UI + agent logic |
-| Population health / care gaps | "Guardian Agent" | Architecture in Population-Health-Analytics.md | Needs dedicated scanner + outreach flow |
-| Readmission prediction | "Predictive Readmission" | LACE+ model documented | Needs dedicated dashboard |
-| Quality measures (HEDIS, MIPS) | "ACO REACH Quality" | Documented in Population-Health-Analytics.md | Needs VBC-specific dashboard |
+| Capability | Dream Session Reference | Status | Route |
+|------------|------------------------|--------|-------|
+| RPM billing (CPT 99453-99458) | "Zero-Touch Revenue Agent" | **BUILT & DEPLOYED** | `/theoria/rpm` |
+| Population health / care gaps | "Guardian Agent" | **BUILT & DEPLOYED** | `/theoria/care-gaps` |
+| Readmission prediction | "Predictive Readmission" | **BUILT & DEPLOYED** | `/theoria/readmission` |
+| Quality measures (HEDIS, MIPS) | "ACO REACH Quality" | **BUILT & DEPLOYED** | `/theoria/aco-reach` |
 
-### What's BRAINSTORMED (new work needed)
+### What Was BRAINSTORMED -- Now BUILT and DEPLOYED (Sprint S4F)
 
-| Capability | Dream Session Reference | Priority | Why |
-|------------|------------------------|----------|-----|
-| Facility Console | medos-brainstorming.md | CRITICAL | Theoria operates 100s of SNFs — needs facility-level view |
-| Shift Handoff Agent | medos-brainstorming.md | CRITICAL | 24/7 telemedicine = continuous shift changes across states |
-| CCM Time Tracker | medos-brainstorming.md, platform-brainstorming.md | HIGH | $60-150/patient/month in uncaptured revenue |
-| PE Executive Dashboard | medos-di-rezze-synergy-master.md | HIGH | Amulet Capital requires board-level reporting |
-| Post-Acute Guardian Agent | medos-di-rezze-synergy-master.md | HIGH | Core VBC differentiator |
-| ACO REACH Performance | medos-di-rezze-synergy-master.md | HIGH | Directly impacts shared savings |
-| Credentialing Agent | medos-brainstorming.md | MEDIUM | 21-state licensing complexity |
-| WebRTC Telemedicine | platform-brainstorming.md | MEDIUM | Native transcription from video calls |
-| SNF-Hospital Data Bridge | DI_REZZE_MASTER_DOSSIER.md | **CRITICAL** | Solves the EXACT problem that inspired Dr. Di Rezze to found Theoria |
-| Care Plan Optimizer | DI_REZZE_MASTER_DOSSIER.md | HIGH | AI "super-consultant" scaling top clinician expertise network-wide |
-| Dynamic Staffing Agent | DI_REZZE_MASTER_DOSSIER.md | HIGH | Directly addresses Amulet's margin expansion mandate |
-| Care Gap Auto-Outreach | agentic-healthcare-brainstorm.md | MEDIUM | Automated patient engagement |
-| Cross-Specialty Diagnostics | agentic-healthcare-brainstorm.md | FUTURE | Requires significant ML/vector work |
+| Capability | Dream Session Reference | Status | Route |
+|------------|------------------------|--------|-------|
+| Facility Console | medos-brainstorming.md | **BUILT & DEPLOYED** | `/theoria/facility` |
+| Shift Handoff Agent | medos-brainstorming.md | **BUILT & DEPLOYED** | `/theoria/shift-handoff` |
+| CCM Time Tracker | medos-brainstorming.md, platform-brainstorming.md | **BUILT & DEPLOYED** | `/theoria/ccm` |
+| PE Executive Dashboard | medos-di-rezze-synergy-master.md | **BUILT & DEPLOYED** | `/theoria/executive` |
+| Post-Acute Guardian Agent | medos-di-rezze-synergy-master.md | **BUILT & DEPLOYED** | `/theoria/guardian` |
+| ACO REACH Performance | medos-di-rezze-synergy-master.md | **BUILT & DEPLOYED** | `/theoria/aco-reach` |
+| Credentialing Agent | medos-brainstorming.md | **BUILT & DEPLOYED** | `/theoria/credentialing` |
+| SNF-Hospital Data Bridge | DI_REZZE_MASTER_DOSSIER.md | **BUILT & DEPLOYED** | `/theoria/discharge` |
+| Care Plan Optimizer | DI_REZZE_MASTER_DOSSIER.md | **BUILT & DEPLOYED** | `/theoria/care-plan` |
+| Dynamic Staffing Agent | DI_REZZE_MASTER_DOSSIER.md | **BUILT & DEPLOYED** | `/theoria/staffing` |
+| Care Gap Auto-Outreach | agentic-healthcare-brainstorm.md | **BUILT & DEPLOYED** | `/theoria/care-gaps` |
+| WebRTC Telemedicine | platform-brainstorming.md | MEDIUM — Future sprint | — |
+| Cross-Specialty Diagnostics | agentic-healthcare-brainstorm.md | FUTURE | — |
 
 ---
 
@@ -144,7 +144,7 @@ Walk through the live platform at https://medos-platform.vercel.app:
 7. **Devices** → "Oura Ring, Apple Watch, Dexcom — we already ingest wearable data as FHIR Observations."
 8. **Context Freshness** → "Your agents never operate on stale data. Every change triggers a cascade refresh."
 
-**Kill line:** *"This entire platform — 40 routes, 522 tests, 44 AI tools, 3 production agents — was built in 14 days by 2 people. That's the power of AI-native architecture."*
+**Kill line:** *"This entire platform — 53 routes, 522 tests, 44 AI tools, 5 production agents — was built in 15 days by 2 people. That's the power of AI-native architecture."*
 
 ### ACT 4: The Theoria Kill Shots (3-4 minutes)
 Present 6 "kill shot" workflows — lead with the one that hits his founding story:
@@ -187,22 +187,52 @@ Present 6 "kill shot" workflows — lead with the one that hits his founding sto
 
 ---
 
-## 5. Pre-Meeting Preparation Checklist
+## 5. Live Demo URLs
 
-- [ ] Deploy latest frontend build to Vercel
-- [ ] Verify all 40 routes load without errors
-- [ ] Prepare screen recording backup (in case of connectivity issues)
-- [ ] Update mock data with Theoria-relevant names (Sunrise SNF, Michigan, Florida)
-- [ ] Review Dr. Di Rezze's recent LinkedIn posts for conversation starters
-- [ ] Prepare 1-page leave-behind PDF with platform metrics
-- [ ] Test demo login credentials work
-- [ ] Have the VBC Opportunity Report template ready to reference
-- [ ] Review Amulet Capital's investment thesis for alignment points
-- [ ] Practice the 10-minute pitch end-to-end
+**Platform:** https://medos-platform.vercel.app
+**Login:** justin@medos.ai / demo123
+**Full demo script:** [[theoria-demo-script]]
+
+All 13 Theoria-specific pages are now **live and deployed** on Vercel:
+
+| Pitch ACT | Route | Page | Status |
+|-----------|-------|------|--------|
+| ACT 1 | `/theoria/discharge` | Discharge Reconciliation (SNF-Hospital Data Bridge) | LIVE |
+| ACT 2 | `/theoria/guardian` | Post-Acute Guardian (Wearable Monitoring) | LIVE |
+| ACT 2 | `/theoria/readmission` | Readmission Risk Scoring (LACE+) | LIVE |
+| ACT 3 | `/theoria/ccm` | CCM Time Tracker (CPT 99490) | LIVE |
+| ACT 3 | `/theoria/rpm` | RPM Revenue Dashboard (CPT 99453-99458) | LIVE |
+| ACT 3 | `/theoria/care-gaps` | Care Gap Scanner | LIVE |
+| ACT 4 | `/theoria/aco-reach` | ACO REACH Performance (Empassion Health) | LIVE |
+| ACT 4 | `/theoria/facility` | Facility Console (Multi-Site) | LIVE |
+| ACT 4 | `/theoria/shift-handoff` | Shift Handoff Briefing | LIVE |
+| ACT 5 | `/theoria/executive` | PE Executive Dashboard (Amulet KPIs) | LIVE |
+| ACT 5 | `/theoria/credentialing` | 21-State Credentialing Management | LIVE |
+| Backup | `/theoria/staffing` | Dynamic Staffing & Allocation | LIVE |
+| Backup | `/theoria/care-plan` | Care Plan Optimizer | LIVE |
 
 ---
 
-## 6. Post-Meeting Follow-Up Plan
+## 6. Pre-Meeting Preparation Checklist
+
+- [ ] Verify Vercel deployment is live at https://medos-platform.vercel.app
+- [ ] Verify all 53 routes load without errors (40 core + 13 Theoria)
+- [ ] Prepare screen recording backup (see [[theoria-demo-script]] for instructions)
+- [ ] Verify mock data shows Theoria-specific details (Ascension Genesys, Beaumont, Sunrise SNF, Michigan, Florida)
+- [ ] Verify ChartEasy/ChatEasy references visible in discharge reconciliation page
+- [ ] Verify Executive dashboard shows Amulet Capital metrics
+- [ ] Verify ACO REACH shows Empassion Health benchmarks
+- [ ] Review Dr. Di Rezze's recent LinkedIn posts for conversation starters
+- [ ] Prepare 1-page leave-behind PDF with platform metrics
+- [ ] Test demo login credentials work (justin@medos.ai / demo123)
+- [ ] Have the VBC Opportunity Report template ready to reference
+- [ ] Review Amulet Capital's investment thesis for alignment points
+- [ ] Practice the 14-minute demo end-to-end using [[theoria-demo-script]]
+- [ ] Backup: local dev server running (`cd Z:/medos-platform/frontend && npm run dev`)
+
+---
+
+## 7. Post-Meeting Follow-Up Plan
 
 | Timing | Action |
 |--------|--------|
@@ -214,14 +244,15 @@ Present 6 "kill shot" workflows — lead with the one that hits his founding sto
 
 ---
 
-## 7. Platform Metrics to Reference
+## 8. Platform Metrics to Reference
 
 | Metric | Value | Significance |
 |--------|-------|--------------|
-| Frontend routes | 40 | More comprehensive than many funded startups |
+| Frontend routes | 53 (40 core + 13 Theoria) | More comprehensive than many funded startups |
+| Theoria-specific pages | 13 | Built for this pitch — every page is live |
 | Backend tests | 522+ | Production-grade quality assurance |
 | MCP tools | 44 | Largest healthcare MCP implementation |
-| AI agents | 3 active (5 designed, 9+ brainstormed) | Agent-first architecture |
+| AI agents | 5 active (7+ Theoria-specific designed) | Agent-first architecture |
 | Admin sections | 13 | Enterprise-grade management |
 | FHIR resources | 14+ types | Full clinical data coverage |
 | Development speed | 9,732 lines in 1 night | AI-native development proof |
@@ -229,7 +260,8 @@ Present 6 "kill shot" workflows — lead with the one that hits his founding sto
 | Uptime target | 99.87% | Healthcare-grade reliability |
 | HIPAA compliance | 94/100 | Security-first architecture |
 | Total codebase | 25,000+ lines | Substantial, not a prototype |
+| Deployment | Vercel (auto-deploy from master) | Live at https://medos-platform.vercel.app |
 
 ---
 
-*This document synthesizes intelligence from 4 dream sessions, 8 ADRs, and the complete MedOS platform to prepare for the most important pitch in MedOS history.*
+*This document synthesizes intelligence from 4 dream sessions, 8 ADRs, and the complete MedOS platform to prepare for the most important pitch in MedOS history. All 13 Theoria-specific pages are now built, deployed, and live at https://medos-platform.vercel.app. See [[theoria-demo-script]] for the full stage-directions demo walkthrough.*

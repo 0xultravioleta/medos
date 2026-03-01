@@ -197,10 +197,12 @@ MedOS transforms Theoria from a **physician services company** (8-12x EBITDA) in
 | S4F-T11 | Discharge Reconciliation page (hospital-SNF bridge, discrepancy reports, med changes) | ~711 | done |
 | S4F-T12 | Care Plan Optimizer page (AI recommendations, evidence citations, approval flow) | ~636 | done |
 | S4F-T13 | Staffing Optimizer page (provider scheduling, facility census, cost analysis) | ~753 | done |
-| S4F-T14 | Agent architecture docs (7 new agents: Guardian, CCM, Shift, Quality, Bridge, CarePlan, Staffing) | ~600 | planned |
-| S4F-T15 | FHIR resource additions (CarePlan, Device, Communication, DocumentReference schemas) | ~300 | planned |
+| S4F-T14 | Agent architecture docs (7 new agents: Guardian, CCM, Shift, Quality, Bridge, CarePlan, Staffing) | ~600 | done |
+| S4F-T15 | FHIR resource additions (CarePlan, Device, DeviceMetric, Communication, CareTeam, Location schemas) | ~300 | done |
 | S4F-T16 | E2E test update for all 13 new pages | ~100 | done |
 | S4F-T17 | E2E video recording with all new pages | ~50 | planned |
+| S4F-T19 | Demo flow script for Dr. Di Rezze pitch (5-ACT stage directions) | ~200 | done |
+| S4F-T20 | Pitch strategy update with live demo URLs and deployment status | ~100 | done |
 | S4F-T18 | Master plan & vault documentation updates | ~200 | done |
 
 ---
