@@ -224,7 +224,49 @@ Beyond the FHIR-MCP Server, MedOS needs domain-specific MCP servers for workflow
 - Payer rule database updated weekly from payer publications
 - All submissions gated by human approval
 
-### 3.4 Analytics MCP Server
+### 3.4 Device/Wearable MCP Server
+
+**Phase:** 2.5 (implemented)
+**Used by:** Clinical Scribe Agent, Device Bridge Agent, System
+**ADR:** [[ADR-007-wearable-iot-integration]]
+
+| MCP Tool | PHI | Description |
+|----------|-----|-------------|
+| `device_register` | limited | Register a wearable device for a patient |
+| `device_list` | limited | List all registered devices for a patient |
+| `device_ingest_reading` | limited | Ingest a single health reading (HR, HRV, SpO2, etc.) |
+| `device_batch_ingest` | limited | Batch ingest multiple readings (sync operations) |
+| `device_get_readings` | limited | Get readings filtered by type/date range |
+| `device_get_summary` | limited | Get daily/weekly metric summaries (min, max, avg) |
+| `device_check_alerts` | none | Check readings against configurable alert thresholds |
+| `device_deregister` | limited | Remove a device from patient |
+
+**Implementation notes:**
+- Supports Oura Ring, Apple Watch, Dexcom CGM, Fitbit, Withings
+- Every reading mapped to FHIR R4 Observation with LOINC codes
+- Alert thresholds: HR >120/<45, SpO2 <92, glucose >180/<70, temp >38/<35
+- Events published to event bus for context rehydration
+
+### 3.5 Context Rehydration MCP Server
+
+**Phase:** 2.5 (implemented)
+**Used by:** All agents
+**ADR:** [[ADR-006-patient-context-rehydration]]
+
+| MCP Tool | PHI | Description |
+|----------|-----|-------------|
+| `context_get_freshness` | limited | Get freshness scores for all contexts of a patient |
+| `context_force_refresh` | limited | Force rehydration of a specific context |
+| `context_get_dependency_graph` | none | Show data→context dependency mappings |
+| `context_get_staleness_report` | none | System-wide staleness report across all contexts |
+
+**Implementation notes:**
+- Monitors ALL system data freshness, not just patient data
+- Freshness score: 0.0 (stale) to 1.0 (fresh), threshold 0.75
+- Tiered cache: Redis (hot, TTL 15min) → Vector (warm) → PostgreSQL JSONB (cold)
+- Golden source pattern: EMR for clinical, payer portal for billing, etc.
+
+### 3.6 Analytics MCP Server
 
 **Phase:** 3
 **Used by:** Quality Reporting Agent, all agents (for historical pattern analysis)
@@ -270,9 +312,12 @@ graph TB
     end
 
     subgraph "MCP Servers"
-        FHIR[FHIR-MCP Server]
-        SCHED[Scheduling MCP]
-        BILL[Billing/Claims MCP]
+        FHIR[FHIR-MCP Server<br/>12 tools]
+        SCRIBE[Scribe MCP<br/>6 tools]
+        SCHED[Scheduling MCP<br/>6 tools]
+        BILL[Billing/Claims MCP<br/>13 tools]
+        DEV[Device/Wearable MCP<br/>8 tools]
+        CTX[Context Rehydration MCP<br/>4 tools]
         PA_MCP[Prior Auth MCP]
         ANAL[Analytics MCP]
         THIRD[Third-Party MCP Servers<br/>Marketplace]
@@ -589,12 +634,101 @@ See [[EPIC-009-revenue-cycle-completion]] for the full Sprint 4 scope.
 
 ---
 
+## MCP vs A2A: Protocol Clarification
+
+MedOS uses **two complementary protocols** for different purposes. Understanding the distinction is critical for architecture and security decisions.
+
+### Protocol Responsibilities
+
+| Dimension | MCP (Model Context Protocol) | A2A (Agent-to-Agent Protocol) |
+|-----------|------------------------------|-------------------------------|
+| **Purpose** | Agent-to-tool communication | Agent-to-agent communication |
+| **Direction** | Agent -> tools/data sources | Agent <-> Agent (bidirectional) |
+| **What flows** | Tool calls with parameters, structured responses | Messages with text, data, files; multi-turn tasks |
+| **Discovery** | Tool registry in MCP Gateway | Agent Cards at `/.well-known/agent.json` |
+| **State** | Stateless (request/response per tool call) | Stateful tasks (submitted -> working -> completed) |
+| **Multi-turn** | No (single request/response) | Yes (input-required state enables back-and-forth) |
+| **External access** | Third-party apps access MedOS data via MCP | Third-party agents communicate with MedOS agents via A2A |
+| **Standard body** | Anthropic (community-governed) | Google -> Linux Foundation |
+
+### When to Use Which
+
+```
+Need to READ patient data?           -> MCP (fhir_read, fhir_search)
+Need to SUBMIT a claim?              -> MCP (billing_submit_claim)
+Need to ASK another agent for info?  -> A2A (SendMessage to agent)
+Need to NOTIFY another agent?        -> A2A (SendMessage, or event bus for fire-and-forget)
+Need to STREAM progress updates?     -> A2A (SendStreamingMessage via SSE)
+Need to WAIT for async result?       -> A2A (push notifications via webhooks)
+External app needs DATA access?      -> MCP (marketplace MCP tools)
+External agent needs COLLABORATION?  -> A2A (Agent Card discovery + task creation)
+```
+
+### Shared Security Infrastructure
+
+Both MCP and A2A flow through a shared gateway layer:
+
+```mermaid
+graph TB
+    subgraph "AI Agents"
+        A1[Clinical Scribe]
+        A2[Prior Auth]
+        A3[Denial Management]
+    end
+
+    subgraph "Shared Gateway Infrastructure"
+        AUTH[Auth Service<br/>JWT + OAuth2]
+        PHI_SCREEN[PHI Screening<br/>Minimum Necessary]
+        AUDIT_LOG[Audit Logger<br/>FHIR AuditEvent]
+
+        A2A_GW[A2A Gateway<br/>Agent-to-Agent Routing]
+        MCP_GW[MCP Gateway<br/>Tool Routing + Scoping]
+    end
+
+    subgraph "MCP Servers (Tools)"
+        FHIR[FHIR MCP]
+        Billing[Billing MCP]
+        Schedule[Scheduling MCP]
+    end
+
+    subgraph "Remote Agents (A2A)"
+        A4[Other MedOS Agents]
+        External[External AI Agents]
+    end
+
+    A1 -->|"MCP: tool calls"| MCP_GW
+    A1 <-->|"A2A: agent messages"| A2A_GW
+
+    A2A_GW --> AUTH
+    A2A_GW --> PHI_SCREEN
+    A2A_GW --> AUDIT_LOG
+    MCP_GW --> AUTH
+    MCP_GW --> AUDIT_LOG
+
+    MCP_GW --> FHIR
+    MCP_GW --> Billing
+    MCP_GW --> Schedule
+
+    A2A_GW <--> A4
+    A2A_GW <--> External
+```
+
+### Key Principle
+
+> **MCP is how agents access the world. A2A is how agents talk to each other.** An agent uses MCP to read a FHIR resource, and A2A to ask another agent to analyze that resource. The MCP Gateway enforces what tools an agent can call. The A2A Gateway enforces what data an agent can share with other agents.
+
+For the full A2A protocol reference, see [[a2a-protocol-reference]]. For the adoption decision, see [[ADR-008-a2a-agent-communication]].
+
+---
+
 ## References
 
 - [[agent-architecture]] -- Agent framework that consumes MCP servers
 - [[HEALTHCARE_OS_MASTERPLAN]] -- Platform vision and marketplace strategy
 - [[ADR-003-ai-agent-framework]] -- LangGraph + MCP decision
 - [[ADR-002-multi-tenancy-schema-per-tenant]] -- Tenant isolation enforced by MCP
+- [[ADR-008-a2a-agent-communication]] -- A2A adoption decision
+- [[a2a-protocol-reference]] -- A2A protocol reference
 - [[System-Architecture-Overview]] -- Overall system architecture
 - [[FHIR-R4-Deep-Dive]] -- FHIR standard that FHIR-MCP Server exposes
 - [[HIPAA-Deep-Dive]] -- HIPAA requirements for MCP security
@@ -602,3 +736,4 @@ See [[EPIC-009-revenue-cycle-completion]] for the full Sprint 4 scope.
 - [[EPIC-009-revenue-cycle-completion]] -- Sprint 4 claims pipeline
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [FHIR-MCP Server (GitHub)](https://github.com/fhir-mcp/fhir-mcp-server)
+- [A2A Protocol Specification](https://a2a-protocol.org/latest/)

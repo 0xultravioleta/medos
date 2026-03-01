@@ -60,6 +60,7 @@ graph TB
         CLEAR[Clearinghouses<br/>Change Healthcare, Availity]
         LAB[Lab Systems<br/>HL7v2]
         PHARM[Pharmacy<br/>NCPDP]
+        DEVICE[Wearable Devices<br/>Apple Watch, Oura, Dexcom]
     end
 
     WEB --> MOD_A
@@ -354,6 +355,22 @@ EVENT_ROUTING = {
     # Integration Events
     "ehr.sync.completed":          ["clinical"],
     "lab.result.received":         ["clinical", "engagement"],
+
+    # Device/Wearable Events (see [[ADR-007-wearable-iot-integration]])
+    "patient.device.reading":      ["clinical", "context_rehydration"],
+    "patient.vitals.recorded":     ["clinical", "context_rehydration"],
+    "device.alert.triggered":      ["clinical", "engagement"],  # Threshold breach
+
+    # Context Rehydration Events (see [[ADR-006-patient-context-rehydration]])
+    "patient.demographic.updated": ["context_rehydration"],
+    "patient.medication.changed":  ["clinical", "context_rehydration"],
+    "patient.allergy.updated":     ["clinical", "context_rehydration"],
+    "patient.insurance.updated":   ["rcm", "context_rehydration"],
+    "payer.rules_updated":         ["rcm", "context_rehydration"],
+    "provider.schedule_changed":   ["scheduling", "context_rehydration"],
+    "agent.config_updated":        ["context_rehydration"],
+    "protocol.clinical_updated":   ["clinical", "context_rehydration"],
+    "compliance.policy_changed":   ["context_rehydration"],
 }
 ```
 
@@ -593,6 +610,27 @@ External data synchronization follows a **pull-then-reconcile** pattern:
 3. **Reconciliation**: Incoming resources are matched against existing FHIR resources by identifiers (MRN, NPI, etc.)
 4. **Conflict Resolution**: External system is source of truth for clinical data; MedOS is source of truth for billing/RCM data
 5. **Audit**: Every sync operation is logged with source system, resource count, and any conflicts detected
+
+### Device Data Synchronization (see [[ADR-007-wearable-iot-integration]])
+
+Wearable/IoT devices use a hybrid push/pull pattern:
+
+1. **Push (Webhooks)**: Dexcom, Withings send real-time data via webhooks → Device Bridge → FHIR Observation
+2. **Pull (Mobile Sync)**: Apple Watch (HealthKit), Oura Ring sync via mobile app → batch upload to Device Bridge
+3. **Normalization**: Raw device data → standardized FHIR R4 Observation with LOINC codes
+4. **Event Publishing**: Every device reading → event bus → context rehydration triggers
+5. **Alert Detection**: Readings compared against configurable thresholds (HR >120/<45, SpO2 <92, glucose >180/<70)
+
+### Context Rehydration (see [[ADR-006-patient-context-rehydration]])
+
+System-wide context freshness is maintained through an event-driven rehydration engine:
+
+1. **Change Detection**: Any data change (patient, payer, schedule, agent config, protocol) publishes to event bus
+2. **Dependency Graph**: Maps which contexts depend on which data sources — identifies all affected contexts
+3. **Tiered Cache**: Hot (Redis TTL 15min) → Warm (vector embeddings) → Cold (PostgreSQL JSONB / golden source)
+4. **Freshness Scoring**: Multi-signal score 0.0 (stale) to 1.0 (fresh) — threshold 0.75
+5. **Auto-Refresh**: Immediate (active encounters), Soon (1 min), Batch (15 min), Lazy (on next access)
+6. **Golden Source**: EMR is ALWAYS truth for clinical data; payer portals for billing rules; scheduling DB for availability
 
 ---
 

@@ -1208,12 +1208,177 @@ class AgentAuditEvent:
 
 ---
 
+## Inter-Agent Communication (A2A Protocol)
+
+MedOS agents communicate with each other using the **Agent-to-Agent (A2A) Protocol**, an open standard created by Google and governed by the Linux Foundation. A2A complements MCP: where MCP handles agent-to-tool communication (reading FHIR data, submitting claims), A2A handles agent-to-agent communication (requesting analysis, sharing results, coordinating workflows).
+
+See [[ADR-008-a2a-agent-communication]] for the full decision record and [[a2a-protocol-reference]] for the protocol specification.
+
+### Two Protocols, One Gateway
+
+| Protocol | Direction | Purpose | Example |
+|----------|-----------|---------|---------|
+| **MCP** | Agent -> Tool | Data access, tool execution | Scribe Agent reads FHIR Patient via `fhir_read` |
+| **A2A** | Agent <-> Agent | Inter-agent collaboration | Denial Agent asks Scribe Agent for supporting documentation |
+
+Both protocols flow through a shared gateway layer that enforces authentication, PHI screening, tenant isolation, and audit logging.
+
+### A2A Communication Diagram
+
+```mermaid
+graph TB
+    subgraph "MedOS Agents"
+        Scribe[Clinical Scribe Agent]
+        PA[Prior Auth Agent]
+        Denial[Denial Management Agent]
+        PatComm[Patient Communication Agent]
+        Quality[Quality Reporting Agent]
+    end
+
+    subgraph "External Agents (A2A)"
+        EpicAI[Epic AI Agent]
+        PayerAI[Payer AI Agent]
+        Marketplace[Marketplace AI Apps]
+    end
+
+    subgraph "Gateway Layer"
+        A2A_GW[A2A Gateway<br/>Auth + PHI Screening + Audit]
+        MCP_GW[MCP Gateway<br/>Tool Routing + Audit]
+    end
+
+    subgraph "MCP Servers"
+        FHIR[FHIR MCP - 12 tools]
+        Billing[Billing MCP - 13 tools]
+        Sched[Scheduling MCP - 6 tools]
+        Device[Device MCP - 8 tools]
+        Context[Context MCP - 4 tools]
+    end
+
+    %% A2A: agent-to-agent
+    Scribe <-->|A2A| A2A_GW
+    PA <-->|A2A| A2A_GW
+    Denial <-->|A2A| A2A_GW
+    PatComm <-->|A2A| A2A_GW
+    Quality <-->|A2A| A2A_GW
+    EpicAI <-->|A2A| A2A_GW
+    PayerAI <-->|A2A| A2A_GW
+    Marketplace <-->|A2A| A2A_GW
+
+    %% MCP: agent-to-tool
+    Scribe -->|MCP| MCP_GW
+    PA -->|MCP| MCP_GW
+    Denial -->|MCP| MCP_GW
+    MCP_GW --> FHIR
+    MCP_GW --> Billing
+    MCP_GW --> Sched
+    MCP_GW --> Device
+    MCP_GW --> Context
+```
+
+### Example: Denial Management Agent Requests Supporting Documentation
+
+When a claim is denied, the Denial Management Agent needs clinical documentation from the Clinical Scribe Agent to build an appeal. This is an A2A interaction:
+
+```mermaid
+sequenceDiagram
+    participant Denial as Denial Management Agent
+    participant GW as A2A Gateway
+    participant Scribe as Clinical Scribe Agent
+    participant MCP as MCP Gateway
+    participant FHIR as FHIR MCP Server
+
+    Note over Denial: Claim CLM-456 denied. Need clinical evidence for appeal.
+
+    Denial->>GW: A2A SendMessage("Provide clinical evidence for claim CLM-456")
+    GW->>GW: Auth check (Denial Agent JWT)
+    GW->>GW: PHI screening (request is clean)
+    GW->>Scribe: Forward A2A Task
+
+    Scribe->>MCP: fhir_read(Encounter/012)
+    MCP->>FHIR: Read encounter
+    FHIR-->>MCP: Encounter data
+    MCP-->>Scribe: FHIR Encounter resource
+
+    Scribe->>Scribe: Generate clinical summary with relevant codes
+
+    Scribe-->>GW: A2A Task completed (SOAP note + observations + codes)
+    GW->>GW: PHI screening (strip full notes, keep summary for billing scope)
+    GW->>GW: Log FHIR AuditEvent
+    GW-->>Denial: Sanitized clinical summary
+
+    Note over Denial: Drafts appeal letter using received evidence
+```
+
+### Example: Device Bridge Notifies Clinical Scribe of New Reading
+
+When a wearable device reports an abnormal reading during an active encounter, the Device Bridge triggers a notification to the Clinical Scribe Agent via A2A:
+
+```mermaid
+sequenceDiagram
+    participant Device as Device Bridge
+    participant GW as A2A Gateway
+    participant Scribe as Clinical Scribe Agent
+
+    Note over Device: Oura Ring reports HR spike: 145 bpm during active encounter
+
+    Device->>GW: A2A SendMessage("Alert: abnormal HR reading during encounter")
+    Note right of Device: DataPart: {patient_id, encounter_id, reading_type: "heart_rate", value: 145, threshold: 120, device: "oura_ring"}
+    GW->>GW: Auth + PHI screening
+    GW->>Scribe: Forward A2A Task
+
+    Scribe->>Scribe: Add device reading to encounter context
+    Scribe->>Scribe: Flag for provider: "Elevated HR (145 bpm) detected by Oura Ring during encounter"
+
+    Scribe-->>GW: Task completed (reading integrated into encounter context)
+    GW-->>Device: Acknowledgment
+```
+
+### PHI Screening in A2A Messages
+
+All A2A messages pass through the PHI screening pipeline at the gateway. The gateway enforces minimum necessary principle based on the **receiving** agent's PHI access level:
+
+| Receiving Agent | PHI Access Level | What They Receive |
+|----------------|-----------------|-------------------|
+| Clinical Scribe | Full clinical | Full FHIR resources, clinical notes, observations |
+| Prior Auth | Clinical + coverage | Clinical data + insurance/coverage info |
+| Denial Management | Billing + limited clinical | Summary notes, codes, billing data (not full clinical notes) |
+| Patient Communication | Demographics only | Name, contact info, appointment details |
+| Quality Reporting | Population (de-identified) | Aggregated metrics, no individual PHI |
+
+### A2A and Context Rehydration Integration
+
+A2A messages can trigger context rehydration events. When one agent updates patient data (e.g., Clinical Scribe generates new SOAP note), it publishes a context change via A2A that the Context Rehydration Engine picks up:
+
+1. Clinical Scribe completes documentation -> A2A notification to downstream agents
+2. Context Rehydration Engine detects change -> refreshes stale contexts
+3. Quality Reporting Agent's care gap assessment gets fresh data automatically
+4. Denial Management Agent's pending appeals get updated clinical evidence
+
+This replaces the simple event bus approach with structured A2A Tasks that include status tracking and acknowledgment.
+
+### Agent Cards
+
+Each MedOS agent exposes an A2A Agent Card at a dedicated endpoint, enabling capability discovery:
+
+| Agent | Agent Card URL | Key Skills |
+|-------|---------------|------------|
+| Clinical Scribe | `/a2a/clinical-scribe` | generate-soap-note, suggest-codes, encounter-summary |
+| Prior Auth | `/a2a/prior-auth` | check-pa-required, gather-evidence, generate-pa-form |
+| Denial Management | `/a2a/denial-management` | analyze-denial, draft-appeal, assess-viability |
+| Patient Communication | `/a2a/patient-comms` | send-reminder, answer-faq, route-message |
+| Quality Reporting | `/a2a/quality-reporting` | calculate-measure, identify-gaps, benchmark |
+
+External agents discover MedOS agents via the standard `/.well-known/agent.json` endpoint, which lists all available Agent Cards. After OAuth2 authentication, external agents can access extended Agent Cards with additional capabilities.
+
+---
+
 ## References
 
 - [[HEALTHCARE_OS_MASTERPLAN]] -- Full vision and module definitions
 - [[ADR-003-ai-agent-framework]] -- Framework selection decision
 - [[ADR-001-fhir-native-data-model]] -- FHIR data model consumed by agents
 - [[ADR-004-fastapi-backend-architecture]] -- Backend serving agent endpoints
+- [[ADR-008-a2a-agent-communication]] -- A2A protocol adoption decision
 - [[System-Architecture-Overview]] -- How agents fit in the overall system
 - [[context-rotting-and-agent-memory]] -- Memory architecture research
 - [[ml-drift-monitoring]] -- Drift detection for agent models
@@ -1222,5 +1387,6 @@ class AgentAuditEvent:
 - [[Revenue-Cycle-Deep-Dive]] -- Revenue cycle domain knowledge
 - [[HIPAA-Deep-Dive]] -- HIPAA compliance requirements
 - [[mcp-integration-plan]] -- MCP integration strategy
+- [[a2a-protocol-reference]] -- A2A protocol reference
 - [[MOC-Agent-Architecture]] -- Navigation index for agent docs
 - [[EPIC-010-security-pilot-readiness]] -- Sprint 5 security hardening
