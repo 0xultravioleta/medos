@@ -856,7 +856,246 @@ Cost/encounter: ~$0.26
 
 ---
 
-## 6. HIPAA Compliance for AI
+## 6. HIPAA Configuration & Compliance
+
+### BAA Coverage and Scope
+
+AWS Bedrock is a **HIPAA-eligible service** when accessed through a signed Business Associate Agreement. This means:
+
+**What IS Covered by Bedrock BAA:**
+- Prompts containing PHI (patient data)
+- Claude model responses generated from PHI-containing prompts
+- Invocation logs stored in CloudWatch and S3
+- All data processed in-memory by Claude
+
+**What is NOT Covered:**
+- Model training or fine-tuning with PHI (not applicable to Phase 1)
+- Direct API calls to api.anthropic.com (use Bedrock instead)
+- Application-layer data (your systems must also be HIPAA-compliant)
+
+### Data Flow Security
+
+All PHI communication with Bedrock must flow through the VPC endpoint:
+
+```
+ECS Task (Private Subnet)
+    |
+    | HTTPS (TLS 1.2+)
+    | Over VPC Endpoint
+    | PHI: Patient name, MRN, diagnoses, meds, etc.
+    |
+    v
+Bedrock VPC Endpoint (bedrock-runtime)
+    |
+    | AWS Internal Network (never public internet)
+    | AWS Bedrock Service (Regional, us-east-1)
+    |
+    v
+Claude Model (In-Memory Processing)
+    | - Process prompt + patient context
+    | - Generate response (SOAP note, codes, etc.)
+    | - Discard processed data (NO training storage)
+    |
+    v
+Response Returned via VPC Endpoint
+    |
+    | Invocation Logs
+    | → CloudWatch Log Group (KMS-encrypted)
+    | → S3 Bucket (KMS-encrypted)
+    |
+    v
+ECS Task Receives Response
+    | Process and store in PostgreSQL
+    | (your application owns compliance here)
+```
+
+### VPC Endpoint Configuration for HIPAA
+
+The VPC endpoint ensures traffic never leaves your AWS account network:
+
+```hcl
+# Critical: private_dns_enabled = true
+# This ensures DNS resolution happens via VPC endpoint, not public DNS
+resource "aws_vpc_endpoint" "bedrock_runtime" {
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.region}.bedrock-runtime"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true  # CRITICAL for HIPAA
+
+  subnet_ids          = var.private_subnet_ids  # NOT public subnets
+  security_group_ids  = [aws_security_group.bedrock_endpoint.id]
+}
+
+# Security group: only ECS tasks can reach Bedrock
+resource "aws_security_group" "bedrock_endpoint" {
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [var.ecs_security_group_id]  # Only ECS tasks
+    description     = "Bedrock HTTPS from ECS tasks only"
+  }
+}
+```
+
+### Invocation Logging (Required for HIPAA Audit Trails)
+
+Every Claude invocation must be logged for compliance audit:
+
+```hcl
+resource "aws_bedrock_model_invocation_logging_configuration" "main" {
+  logging_config {
+    cloudwatch_config {
+      log_group_name = aws_cloudwatch_log_group.bedrock_invocations.name
+      role_arn       = aws_iam_role.bedrock_logging.arn
+
+      # Large data (full prompts/responses) in S3
+      large_data_delivery_s3_config {
+        bucket_name = var.bedrock_logs_bucket_name
+        key_prefix  = "bedrock-invocation-logs/"
+      }
+    }
+
+    s3_config {
+      bucket_name = var.bedrock_logs_bucket_name
+      key_prefix  = "bedrock-full-logs/"
+    }
+
+    text_data_delivery_enabled = true  # Log text (prompts + outputs)
+  }
+}
+
+# CloudWatch log group: KMS-encrypted with 1-year retention
+resource "aws_cloudwatch_log_group" "bedrock_invocations" {
+  name              = "/bedrock/medos/invocations"
+  retention_in_days = 365  # 1 year for compliance
+  kms_key_id        = var.bedrock_kms_key_arn
+
+  tags = {
+    Compliance = "HIPAA"
+    DataClass = "PHI"
+  }
+}
+
+# S3 bucket: KMS encryption + versioning + MFA delete
+resource "aws_s3_bucket_server_side_encryption_configuration" "bedrock_logs" {
+  bucket = aws_s3_bucket.bedrock_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = var.bedrock_kms_key_arn
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "bedrock_logs" {
+  bucket = aws_s3_bucket.bedrock_logs.id
+  versioning_configuration {
+    status     = "Enabled"
+    mfa_delete = "Enabled"  # Require MFA to delete
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "bedrock_logs" {
+  bucket = aws_s3_bucket.bedrock_logs.id
+
+  rule {
+    id     = "archive-after-90-days"
+    status = "Enabled"
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"  # Move to cheaper tier
+    }
+  }
+}
+```
+
+### Audit Event Tracking (Application Layer)
+
+```python
+# medos_clinical/audit_events.py
+
+from fhir.resources.auditevent import AuditEvent
+from datetime import datetime
+
+def create_bedrock_audit_event(
+    encounter_id: str,
+    user_id: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    action: str,  # "generated", "reviewed", "accepted", "rejected"
+) -> AuditEvent:
+    """
+    Create FHIR AuditEvent for Bedrock invocation.
+    Stored in PostgreSQL for HIPAA compliance audit trail.
+    """
+    audit_event = AuditEvent(
+        type={
+            "system": "http://terminology.hl7.org/CodeSystem/audit-event-type",
+            "code": "110110",  # Query
+            "display": "Query"
+        },
+        action=action,
+        recorded=datetime.utcnow().isoformat(),
+        outcome="0",  # Success
+        agent=[
+            {
+                "type": {
+                    "coding": [
+                        {
+                            "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+                            "code": "AGNT",
+                            "display": "Agent"
+                        }
+                    ]
+                },
+                "name": user_id,
+                "requestor": True
+            },
+            {
+                "type": {
+                    "coding": [
+                        {
+                            "system": "http://terminology.hl7.org/CodeSystem/v3-RoleCode",
+                            "code": "AI",
+                            "display": "Artificial Intelligence"
+                        }
+                    ]
+                },
+                "name": f"Claude {model}",
+                "requestor": False
+            }
+        ],
+        entity=[
+            {
+                "what": {
+                    "reference": f"Encounter/{encounter_id}"
+                },
+                "role": {
+                    "code": "4"  # Domain Object / Report
+                },
+                "description": f"Generated SOAP note via Bedrock ({model})",
+                "query": "base64_encoded_prompt_if_necessary"
+            }
+        ],
+        source={
+            "site": "medos-clinical-ai",
+            "observer": {
+                "reference": f"Organization/medos"
+            }
+        }
+    )
+
+    # Store in PostgreSQL (tenant schema)
+    # Each tenant's audit events isolated
+    return audit_event
+```
+
+---
+
+## 6A. HIPAA Compliance for AI
 
 ### What the BAA Covers
 
@@ -948,27 +1187,452 @@ No public internet path exists between the application and Bedrock. The VPC endp
 
 ### CloudWatch Metrics to Track
 
-| Metric | Source | Alarm Threshold |
-|---|---|---|
-| Bedrock invocation count | CloudWatch (Bedrock namespace) | >5,000/day (unexpected spike) |
-| Bedrock invocation latency (p99) | CloudWatch | >30 seconds |
-| Bedrock throttling errors | CloudWatch | >10/hour |
-| Bedrock validation errors | Application metrics | >5% of invocations |
-| Claude output rejection rate | Application metrics | >20% of generated notes |
-| Token usage per invocation | Application metrics | >8,000 input tokens (prompt too large) |
-| Cost per day | AWS Cost Explorer | >$50/day (dev), >$200/day (prod) |
+#### Bedrock Native Metrics (CloudWatch Namespace: `AWS/Bedrock`)
 
-### Dashboard Widgets
+| Metric | Unit | Alarm Threshold | Interpretation |
+|---|---|---|---|
+| `InvocationCount` | Count | >5,000/day | Unexpected spike may indicate runaway job or attack |
+| `InvocationLatency` | Milliseconds (p99) | >30,000 | Clinical workflow impact if >5 seconds |
+| `ThrottledCount` | Count | >10/hour | Need to increase throughput quota with AWS |
+| `ValidationErrors` | Count | >5% of invocations | Prompt engineering issue; review failed requests |
+| `ModelAccessDenied` | Count | >0 | IAM policy issue or model access not granted |
 
+**CloudWatch Dashboard for Bedrock:**
+
+```hcl
+resource "aws_cloudwatch_dashboard" "bedrock" {
+  dashboard_name = "medos-bedrock-operations"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["AWS/Bedrock", "InvocationCount", { stat = "Sum" }],
+            [".", "InvocationLatency", { stat = "p99" }],
+            [".", "ThrottledCount", { stat = "Sum" }],
+          ]
+          period = 300
+          stat   = "Average"
+          region = "us-east-1"
+          title  = "Bedrock Invocations & Latency"
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["MedOS/Bedrock", "TokensInput", { dimensions = { Model = "Sonnet" } }],
+            [".", ".", { dimensions = { Model = "Haiku" } }],
+            [".", "TokensOutput", { dimensions = { Model = "Sonnet" } }],
+            [".", ".", { dimensions = { Model = "Haiku" } }],
+          ]
+          period = 300
+          stat   = "Sum"
+          region = "us-east-1"
+          title  = "Token Usage by Model"
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["MedOS/Bedrock", "CostUSD", { stat = "Sum" }],
+          ]
+          period = 3600
+          stat   = "Sum"
+          region = "us-east-1"
+          title  = "Cumulative Cost (Hourly)"
+        }
+      },
+    ]
+  })
+}
 ```
-Bedrock Operations Dashboard:
-  - Invocation count (line chart, hourly)
-  - Latency distribution (p50, p90, p99)
-  - Error rate by type (throttle, validation, timeout)
-  - Token usage trend (input vs. output)
-  - Cost accumulation (daily, running total vs. budget)
-  - Note acceptance rate (accepted, modified, rejected)
-  - Model comparison (Sonnet vs. Haiku usage split)
+
+#### Application-Level Metrics (Custom CloudWatch Namespace: `MedOS/Bedrock`)
+
+| Metric | Dimensions | Alert Threshold | Business Impact |
+|---|---|---|---|
+| `NoteAcceptanceRate` | TaskType, Provider | <70% | Quality issue; investigate rejections |
+| `TokensPerEncounter` | Model, TaskType | >6,000 input | Prompt too verbose; optimize context |
+| `CostPerEncounter` | Model, Facility | >$0.10 | Cost overrun; review model routing |
+| `VerificationFlagRate` | Model, TaskType | >30% | Model uncertain; need provider guidance |
+| `LatencyByModel` | Model | Sonnet >5s | User experience degradation |
+
+**Custom Application Metrics Implementation:**
+
+```python
+# medos_clinical/bedrock_metrics.py
+
+import boto3
+from datetime import datetime
+from typing import Optional
+
+class BedrockMetricsCollector:
+    """Publish Bedrock invocation metrics to CloudWatch."""
+
+    def __init__(self):
+        self.cloudwatch = boto3.client("cloudwatch")
+
+    def publish_invocation_metrics(
+        self,
+        model: str,
+        task_type: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float,
+        latency_ms: float,
+        encounter_id: str,
+        facility_id: str,
+        confidence_score: Optional[float] = None,
+    ) -> None:
+        """
+        Publish metrics after each Bedrock invocation.
+        """
+        metrics_data = [
+            {
+                "MetricName": "TokensPerEncounter",
+                "Value": input_tokens + output_tokens,
+                "Unit": "Count",
+                "Dimensions": [
+                    {"Name": "Model", "Value": model},
+                    {"Name": "TaskType", "Value": task_type},
+                    {"Name": "Facility", "Value": facility_id},
+                ],
+                "Timestamp": datetime.utcnow(),
+            },
+            {
+                "MetricName": "CostPerEncounter",
+                "Value": cost_usd,
+                "Unit": "None",
+                "Dimensions": [
+                    {"Name": "Model", "Value": model},
+                    {"Name": "TaskType", "Value": task_type},
+                    {"Name": "Facility", "Value": facility_id},
+                ],
+                "Timestamp": datetime.utcnow(),
+            },
+            {
+                "MetricName": "LatencyMS",
+                "Value": latency_ms,
+                "Unit": "Milliseconds",
+                "Dimensions": [
+                    {"Name": "Model", "Value": model},
+                    {"Name": "TaskType", "Value": task_type},
+                ],
+                "Timestamp": datetime.utcnow(),
+            },
+        ]
+
+        if confidence_score is not None:
+            metrics_data.append({
+                "MetricName": "ConfidenceScore",
+                "Value": confidence_score,
+                "Unit": "None",
+                "Dimensions": [
+                    {"Name": "Model", "Value": model},
+                    {"Name": "TaskType", "Value": task_type},
+                ],
+                "Timestamp": datetime.utcnow(),
+            })
+
+        self.cloudwatch.put_metric_data(
+            Namespace="MedOS/Bedrock",
+            MetricData=metrics_data,
+        )
+
+    def publish_acceptance_metrics(
+        self,
+        task_type: str,
+        action: str,  # "accepted", "modified", "rejected"
+        facility_id: str,
+        provider_id: str,
+    ) -> None:
+        """
+        Track provider acceptance of AI suggestions.
+        """
+        self.cloudwatch.put_metric_data(
+            Namespace="MedOS/Bedrock",
+            MetricData=[
+                {
+                    "MetricName": "NoteActionCount",
+                    "Value": 1,
+                    "Unit": "Count",
+                    "Dimensions": [
+                        {"Name": "TaskType", "Value": task_type},
+                        {"Name": "Action", "Value": action},
+                        {"Name": "Facility", "Value": facility_id},
+                        {"Name": "Provider", "Value": provider_id},
+                    ],
+                    "Timestamp": datetime.utcnow(),
+                }
+            ],
+        )
+```
+
+### Alarms and Alerts
+
+**High Priority Alerts:**
+
+```hcl
+resource "aws_cloudwatch_metric_alarm" "bedrock_throttling" {
+  alarm_name          = "bedrock-throttling-critical"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ThrottledCount"
+  namespace           = "AWS/Bedrock"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 10
+  alarm_description   = "Bedrock throttling detected - request quota increase"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "bedrock_latency_spike" {
+  alarm_name          = "bedrock-latency-spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "InvocationLatency"
+  namespace           = "AWS/Bedrock"
+  period              = 60
+  statistic           = "p99"
+  threshold           = 5000  # 5 seconds
+  alarm_description   = "Claude latency >5s - impacts clinical workflow"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "daily_cost_overrun" {
+  alarm_name          = "bedrock-daily-cost-overrun"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CostUSD"
+  namespace           = "MedOS/Bedrock"
+  period              = 86400  # 24 hours
+  statistic           = "Sum"
+  threshold           = 50  # $50/day for dev; adjust per environment
+  alarm_description   = "Daily Bedrock spend exceeds budget"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "high_rejection_rate" {
+  alarm_name          = "bedrock-high-rejection-rate"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "NoteAcceptanceRate"
+  namespace           = "MedOS/Bedrock"
+  period              = 3600
+  statistic           = "Average"
+  threshold           = 0.70  # <70% acceptance = problem
+  alarm_description   = "Providers rejecting >30% of AI suggestions"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+```
+
+### Dashboard Visualization
+
+**Recommended CloudWatch Dashboard Widgets:**
+
+1. **Operations Overview** (single pane):
+   - Invocation count (last 24h)
+   - P99 latency (red if >5s)
+   - Current cost (running total)
+   - Error rate (red if >5%)
+
+2. **Token Usage Trend** (line chart):
+   - Input tokens by model (Sonnet vs. Haiku split)
+   - Output tokens trend
+   - Identify abnormal spikes
+
+3. **Cost Breakdown** (pie chart + line):
+   - Cost by model (Sonnet vs. Haiku percentage)
+   - Cost by task type (SOAP vs. coding vs. other)
+   - Running daily total vs. budget
+
+4. **Provider Behavior** (heatmap):
+   - Acceptance rate by provider
+   - By facility
+   - By task type
+   - Identify outliers
+
+5. **Model Performance** (comparison):
+   - Latency: Sonnet vs. Haiku (p50, p95, p99)
+   - Token efficiency: tokens/encounter
+   - Confidence distribution: histogram
+
+---
+
+## 8A. Application Integration Patterns
+
+### Pattern 1: SOAP Note Generation (Claude Sonnet)
+
+```python
+# medos_clinical/scribe_service.py
+
+import boto3
+import json
+from typing import Optional
+from tenacity import retry, stop_after_attempt, wait_exponential
+import structlog
+
+logger = structlog.get_logger()
+
+class ClinicalScribeService:
+    """Generate SOAP notes from clinical encounters using Claude Sonnet."""
+
+    def __init__(self):
+        self.bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+        self.sonnet_model_id = "anthropic.claude-sonnet-4-6-20250514"
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
+    def generate_soap_note(
+        self,
+        encounter_id: str,
+        transcript: str,
+        patient_context: dict,
+        vital_signs: dict,
+        facility_id: str,
+    ) -> dict:
+        """
+        Generate structured SOAP note from encounter transcript.
+
+        Returns:
+            {
+                "soap_note": {...},
+                "verification_flags": [...],
+                "metadata": {...}
+            }
+        """
+        system_prompt = self._build_clinical_system_prompt(patient_context)
+
+        user_prompt = f"""
+Generate a structured SOAP note from this clinical encounter transcript.
+
+TRANSCRIPT:
+{transcript}
+
+PATIENT CONTEXT:
+{json.dumps(patient_context, indent=2)}
+
+VITAL SIGNS:
+{json.dumps(vital_signs, indent=2)}
+
+Output format: JSON with keys: subjective, objective, assessment, plan.
+Include verification_flags array for items requiring provider review.
+"""
+
+        request_body = {
+            "anthropic_version": "bedrock-2023-06-01",
+            "max_tokens": 4096,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "temperature": 0.1,  # Low for clinical accuracy
+        }
+
+        response = self.bedrock.invoke_model(
+            modelId=self.sonnet_model_id,
+            body=json.dumps(request_body),
+            contentType="application/json",
+        )
+
+        response_body = json.loads(response["body"].read())
+        soap_note = json.loads(response_body["content"][0]["text"])
+
+        tokens_input = response_body["usage"]["input_tokens"]
+        tokens_output = response_body["usage"]["output_tokens"]
+
+        logger.info(
+            "soap_note_generated",
+            encounter_id=encounter_id,
+            input_tokens=tokens_input,
+            output_tokens=tokens_output,
+        )
+
+        cost_usd = (tokens_input * 3 + tokens_output * 15) / 1_000_000
+        self._publish_metrics(
+            model="sonnet",
+            task_type="soap_generation",
+            input_tokens=tokens_input,
+            output_tokens=tokens_output,
+            cost_usd=cost_usd,
+            facility_id=facility_id,
+        )
+
+        return soap_note
+
+    def _build_clinical_system_prompt(self, patient_context: dict) -> str:
+        """Build system prompt with clinical guidelines."""
+        return """You are an expert clinical documentation specialist.
+Generate SOAP notes that are clinically accurate, evidence-based, and
+compliant with EHR documentation standards. Output ONLY valid JSON."""
+```
+
+### Pattern 2: Coding Suggestions (Claude Haiku)
+
+```python
+# medos_clinical/coding_service.py
+
+class ClinicalCodingService:
+    """Suggest ICD-10 and CPT codes using Claude Haiku."""
+
+    def __init__(self):
+        self.bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+        self.haiku_model_id = "anthropic.claude-haiku-4-5-20251001"
+
+    def suggest_codes(
+        self,
+        encounter_id: str,
+        soap_note: dict,
+        specialty: str,
+        facility_id: str,
+    ) -> dict:
+        """
+        Suggest ICD-10 and CPT codes from SOAP note.
+        Returns: {icd10_suggestions: [...], cpt_suggestions: [...]}
+        """
+        user_prompt = f"""
+Based on this SOAP note, suggest ICD-10 and CPT codes.
+
+SOAP NOTE:
+{json.dumps(soap_note, indent=2)}
+
+SPECIALTY: {specialty}
+
+Output format: JSON. Only suggest codes you are confident about.
+"""
+
+        request_body = {
+            "anthropic_version": "bedrock-2023-06-01",
+            "max_tokens": 2048,
+            "system": "You are a medical coding expert. Output ONLY valid JSON.",
+            "messages": [{"role": "user", "content": user_prompt}],
+            "temperature": 0.0,  # Deterministic
+        }
+
+        response = self.bedrock.invoke_model(
+            modelId=self.haiku_model_id,
+            body=json.dumps(request_body),
+        )
+
+        response_body = json.loads(response["body"].read())
+        coding_suggestions = json.loads(response_body["content"][0]["text"])
+
+        tokens_input = response_body["usage"]["input_tokens"]
+        tokens_output = response_body["usage"]["output_tokens"]
+        cost_usd = (tokens_input * 0.80 + tokens_output * 4) / 1_000_000
+
+        logger.info(
+            "coding_suggestions_generated",
+            encounter_id=encounter_id,
+            icd10_count=len(coding_suggestions.get("icd10_suggestions", [])),
+        )
+
+        return coding_suggestions
 ```
 
 ---
