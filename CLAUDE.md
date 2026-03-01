@@ -47,8 +47,8 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | S1 | W3-4 | FHIR resources, patient matching, event bus | done |
 | S2 | W5-6 | MCP SDK refactoring, 32 tools, 3 agents, HIPAAFastMCP | done |
 | S3 | W7-8 | Demo polish: Approvals UI, WebSocket, agent runner, intake workflow | done |
-| S4 | W9-10 | Revenue cycle completion: X12 837P, scrubbing, 835 parser, PA, denials, analytics | **in-progress** |
-| S5 | W11-12 | Security hardening, pen test, onboarding | pending |
+| S4 | W9-10 | Revenue cycle completion: X12 837P, scrubbing, 835 parser, PA, denials, analytics | done |
+| S5 | W11-12 | Security hardening, pen test, onboarding | **in-progress** |
 | S6 | W13 | Prod deploy, pilot onboarding, go-live | pending |
 
 ---
@@ -80,7 +80,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 |---------|-----------|
 | `03-projects/PRE-DEV-CHECKLIST.md` | Todo ANTES de Sprint 0 |
 | `03-projects/PHASE-1-EXECUTION-PLAN.md` | 117 tasks, dia-a-dia |
-| `03-projects/EPIC-001` a `EPIC-009` | Detalle por area (001-006 Foundation, 007 MCP SDK, 008 Demo Polish, 009 Revenue Cycle Completion) |
+| `03-projects/EPIC-001` a `EPIC-010` | Detalle por area (001-006 Foundation, 007 MCP SDK, 008 Demo Polish, 009 Revenue Cycle Completion, 010 Security & Pilot Readiness) |
 
 ### Arquitectura (como hacerlo)
 | Archivo | Decision |
@@ -121,6 +121,11 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | Archivo | Proposito |
 |---------|-----------|
 | `03-projects/EPIC-009-*` | Revenue cycle completion: X12 837P, scrubbing, 835 parser, payment posting, claims MCP tools |
+
+### Sprint 5 Files
+| Archivo | Proposito |
+|---------|-----------|
+| `03-projects/EPIC-010-*` | Security hardening & pilot readiness: HIPAA risk assessment, pen test, onboarding wizard, EHR bridge, training |
 
 ### Engineering (guias de implementacion)
 | Archivo | Guia |
