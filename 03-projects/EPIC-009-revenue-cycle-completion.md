@@ -58,12 +58,14 @@ Week 10 (Sprint 4, Part 2)
 Generate HIPAA-compliant X12 837P (005010X222A1) professional claims from FHIR Claim resources. The generator takes a FHIR Claim resource (with linked Patient, Practitioner, Organization, Encounter, and Coverage) and produces a valid X12 837P EDI file ready for clearinghouse submission. Supports single and batch claim generation. All required loops (1000A/B, 2000A/B, 2300, 2400) populated from FHIR data.
 
 **Acceptance Criteria:**
-- [ ] Generator produces valid 005010X222A1 output
-- [ ] All required X12 segments populated (ISA, GS, ST, BHT, CLM, SV1, DTP, HI, NM1, etc.)
-- [ ] FHIR Claim -> X12 837P mapping covers: demographics, insurance, diagnosis codes, procedure codes, modifiers, charges, units, dates of service, place of service, NPI
-- [ ] Batch mode generates multi-claim 837P files
-- [ ] Output passes X12 syntax validation
-- [ ] Tests cover single claim, batch, and edge cases (multiple diagnosis codes, modifiers, secondary insurance)
+- [x] Generator produces valid 005010X222A1 output
+- [x] All required X12 segments populated (ISA, GS, ST, BHT, CLM, SV1, DTP, HI, NM1, etc.)
+- [x] FHIR Claim -> X12 837P mapping covers: demographics, insurance, diagnosis codes, procedure codes, modifiers, charges, units, dates of service, place of service, NPI
+- [x] Batch mode generates multi-claim 837P files
+- [x] Output passes X12 syntax validation
+- [x] Tests cover single claim, batch, and edge cases (multiple diagnosis codes, modifiers, secondary insurance)
+
+**Status:** Done (33 tests passing)
 
 ---
 
@@ -77,7 +79,7 @@ Generate HIPAA-compliant X12 837P (005010X222A1) professional claims from FHIR C
 Build a pre-submission claims scrubbing engine that validates claims against 15+ rules before they leave MedOS. Each rule produces a severity (error, warning, info) and a human-readable explanation. Claims that fail any error-level rule are blocked from submission. The engine also produces a denial risk score (0.0-1.0) based on historical patterns and rule violations.
 
 **Acceptance Criteria:**
-- [ ] 15+ scrubbing rules implemented:
+- [x] 15+ scrubbing rules implemented:
   - Required fields validation (NPI, Tax ID, subscriber ID, dates)
   - ICD-10-CM code validity for date of service
   - CPT code validity and medical necessity (diagnosis-procedure pairing)
@@ -93,10 +95,12 @@ Build a pre-submission claims scrubbing engine that validates claims against 15+
   - Charge amount validation (zero charges, negative charges)
   - Subscriber ID format validation per payer
   - Rendering provider NPI validation
-- [ ] Each rule returns: rule_id, severity (error/warning/info), description, affected field
-- [ ] Denial risk score calculated from rule violations and historical patterns
-- [ ] Error-level violations block claim submission
-- [ ] Scrub report generated as structured JSON
+- [x] Each rule returns: rule_id, severity (error/warning/info), description, affected field
+- [x] Denial risk score calculated from rule violations and historical patterns
+- [x] Error-level violations block claim submission
+- [x] Scrub report generated as structured JSON
+
+**Status:** Done (18 rules implemented, denial risk scoring operational)
 
 ---
 
@@ -110,14 +114,16 @@ Build a pre-submission claims scrubbing engine that validates claims against 15+
 Parse X12 835 Electronic Remittance Advice (ERA) files into structured data. The parser extracts claim-level payments (CLP segments), adjustment reason codes (CAS segments with CARC/RARC), service line details (SVC segments), and provider-level adjustments (PLB segments). Output is a structured Python model ready for payment posting.
 
 **Acceptance Criteria:**
-- [ ] Parser handles 005010X221A1 format
-- [ ] Extracts: payer info, payment amount, check/EFT number, payment date
-- [ ] Extracts per-claim: claim ID, status, charged amount, paid amount, patient responsibility
-- [ ] Extracts per-service-line: CPT code, charged, allowed, paid, adjustment amounts
-- [ ] Extracts adjustment reason codes (CARC) with human-readable descriptions
-- [ ] Extracts remark codes (RARC) with human-readable descriptions
-- [ ] Handles multiple claims per 835 file
-- [ ] Tests with sample 835 files covering: full payment, partial payment, denial, adjustment
+- [x] Parser handles 005010X221A1 format
+- [x] Extracts: payer info, payment amount, check/EFT number, payment date
+- [x] Extracts per-claim: claim ID, status, charged amount, paid amount, patient responsibility
+- [x] Extracts per-service-line: CPT code, charged, allowed, paid, adjustment amounts
+- [x] Extracts adjustment reason codes (CARC) with human-readable descriptions
+- [x] Extracts remark codes (RARC) with human-readable descriptions
+- [x] Handles multiple claims per 835 file
+- [x] Tests with sample 835 files covering: full payment, partial payment, denial, adjustment
+
+**Status:** Done (CLP/CAS/SVC parsing complete)
 
 ---
 
@@ -131,13 +137,15 @@ Parse X12 835 Electronic Remittance Advice (ERA) files into structured data. The
 Match 835 remittance payments to submitted claims and update claim status. Calculate patient responsibility (copay, coinsurance, deductible) from CAS segments. Detect underpayments by comparing paid amounts against contracted rates. Generate patient statements for remaining balances.
 
 **Acceptance Criteria:**
-- [ ] Payments matched to original claims by claim ID and service line
-- [ ] Claim status updated: submitted -> paid / partially paid / denied
-- [ ] Patient responsibility calculated from CAS segments (PR group)
-- [ ] Contractual adjustments identified from CAS segments (CO group)
-- [ ] Underpayment detection: paid amount vs expected amount flagged when variance > threshold
-- [ ] Payment posting creates FHIR ExplanationOfBenefit resources
-- [ ] Unmatched payments flagged for manual review
+- [x] Payments matched to original claims by claim ID and service line
+- [x] Claim status updated: submitted -> paid / partially paid / denied
+- [x] Patient responsibility calculated from CAS segments (PR group)
+- [x] Contractual adjustments identified from CAS segments (CO group)
+- [x] Underpayment detection: paid amount vs expected amount flagged when variance > threshold
+- [x] Payment posting creates FHIR ExplanationOfBenefit resources
+- [x] Unmatched payments flagged for manual review
+
+**Status:** Done (balance calculation, status determination operational)
 
 ---
 
@@ -151,22 +159,24 @@ Match 835 remittance payments to submitted claims and update claim status. Calcu
 Register 4 new MCP tools in the Billing MCP server that expose the claims pipeline to AI agents. These tools allow agents to generate claims, scrub for errors, post payments, and query analytics -- enabling end-to-end revenue cycle automation via the MCP protocol.
 
 **Acceptance Criteria:**
-- [ ] `billing_generate_claim` -- Generate X12 837P from FHIR Claim resource
+- [x] `billing_generate_claim` -- Generate X12 837P from FHIR Claim resource
   - Input: claim_id or FHIR Claim resource
   - Output: Generated 837P data + validation status
   - Requires human approval for submission
-- [ ] `billing_scrub_claim` -- Run scrubbing rules against a claim
+- [x] `billing_scrub_claim` -- Run scrubbing rules against a claim
   - Input: claim_id or FHIR Claim resource
   - Output: Scrub report with rule violations, denial risk score
-- [ ] `billing_post_payment` -- Post payment from parsed 835 data
+- [x] `billing_post_payment` -- Post payment from parsed 835 data
   - Input: 835 data (parsed) or raw 835 file
   - Output: Payment posting results, patient responsibility, underpayment flags
   - Requires human approval
-- [ ] `billing_claims_analytics` -- Query claims analytics
+- [x] `billing_claims_analytics` -- Query claims analytics
   - Input: date range, optional filters (payer, provider, status)
   - Output: Clean claim rate, denial rate by category, AR aging, revenue summary
-- [ ] All 4 tools registered via `@hipaa_tool` with PHI access level and required scopes
-- [ ] Total MCP tool count: 36 (32 existing + 4 new)
+- [x] All 4 tools registered via `@hipaa_tool` with PHI access level and required scopes
+- [x] Total MCP tool count: 36 (32 existing + 4 new)
+
+**Status:** Done (4 new MCP tools registered, 36 total)
 
 ---
 
@@ -180,13 +190,15 @@ Register 4 new MCP tools in the Billing MCP server that expose the claims pipeli
 Build a Claims Analytics dashboard section in the Next.js frontend. Displays key revenue cycle metrics: clean claim rate, denial rate breakdown by CARC category, AR aging buckets, and revenue trends. All data from `GET /api/v1/analytics/claims` endpoint. Server Component for data fetching, Client Component only for interactive charts.
 
 **Acceptance Criteria:**
-- [ ] Clean claim rate displayed as percentage with trend (last 30/60/90 days)
-- [ ] Denial breakdown by CARC category (pie chart or bar chart)
-- [ ] AR aging buckets: 0-30, 31-60, 61-90, 91-120, 120+ days
-- [ ] Revenue summary: charges submitted, payments received, adjustments, patient responsibility
-- [ ] Filters: date range, payer, provider
-- [ ] Server Component fetches data; Client Component renders charts
-- [ ] No PHI displayed on analytics dashboard (aggregated metrics only)
+- [x] Clean claim rate displayed as percentage with trend (last 30/60/90 days)
+- [x] Denial breakdown by CARC category (pie chart or bar chart)
+- [x] AR aging buckets: 0-30, 31-60, 61-90, 91-120, 120+ days
+- [x] Revenue summary: charges submitted, payments received, adjustments, patient responsibility
+- [x] Filters: date range, payer, provider
+- [x] Server Component fetches data; Client Component renders charts
+- [x] No PHI displayed on analytics dashboard (aggregated metrics only)
+
+**Status:** Done (GaugeRing KPIs, AR aging chart, denial breakdown chart)
 
 ---
 
@@ -227,12 +239,12 @@ T1 + T2 + T4 ──> T6 (Claims Analytics)
 
 ## Definition of Done
 
-- [ ] X12 837P generator producing valid 005010X222A1 output
-- [ ] Claims scrubber catching 15+ denial types with risk scoring
-- [ ] X12 835 parser extracting payment, adjustment, and patient responsibility data
-- [ ] Payment posting matching 835 payments to submitted claims
-- [ ] 4 new MCP tools registered (total: 36 tools)
-- [ ] Claims analytics on frontend with charts
+- [x] X12 837P generator producing valid 005010X222A1 output
+- [x] Claims scrubber catching 15+ denial types with risk scoring
+- [x] X12 835 parser extracting payment, adjustment, and patient responsibility data
+- [x] Payment posting matching 835 payments to submitted claims
+- [x] 4 new MCP tools registered (total: 36 tools)
+- [x] Claims analytics on frontend with charts
 - [ ] 220+ tests passing, ruff clean
 
 ---

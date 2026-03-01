@@ -955,39 +955,69 @@ flowchart TD
 
 ---
 
-## Prior Authorization Agent State Machine (Sprint 2)
+## Prior Authorization Agent State Machine (Sprint 4)
 
 ```mermaid
 stateDiagram-v2
     [*] --> CheckPARequirement
-    CheckPARequirement --> Done: No PA Required
-    CheckPARequirement --> GatherEvidence: PA Required
+    CheckPARequirement --> PANotRequired: No PA needed
+    CheckPARequirement --> GatherEvidence: PA required
+    PANotRequired --> [*]
     GatherEvidence --> GenerateJustification
     GenerateJustification --> CreatePAForm
     CreatePAForm --> SubmitForApproval
-    SubmitForApproval --> [*]
-    Done --> [*]
+    SubmitForApproval --> HumanReview
+    HumanReview --> [*]
 ```
 
-See [[EPIC-007-mcp-sdk-refactoring]] T7 for implementation details.
+### Prior Authorization Agent Summary
+
+The Prior Authorization Agent automates the end-to-end PA workflow: detecting when a procedure requires authorization, assembling clinical evidence from the FHIR store, generating a medical necessity justification narrative, building the PA form (X12 278 or Da Vinci PAS FHIR Bundle), and routing to a human reviewer before submission to the payer.
+
+| Attribute | Detail |
+|-----------|--------|
+| **Module** | C (Claims & Billing) / D (AI & Analytics) |
+| **Trigger** | `coding.approved` event when procedure requires PA |
+| **MCP Tools** | `pa_check_requirement`, `pa_gather_evidence`, `pa_generate_justification`, `pa_create_form`, `pa_submit`, `pa_check_status`, `pa_appeal` (7 tools via Prior Auth MCP Server) |
+| **Confidence Thresholds** | >= 0.95 auto-submit for staff review / 0.85-0.95 flag for extra documentation / < 0.85 escalate to billing specialist |
+| **Authority Constraints** | CANNOT submit PA to payer without human approval. CANNOT modify clinical data. CANNOT bypass payer-specific documentation requirements. All submissions logged as FHIR AuditEvent. |
+| **Max Daily Auto-Executions** | 0 (always requires human approval before payer submission) |
+
+See [[EPIC-007-mcp-sdk-refactoring]] T7 for Sprint 2 implementation details. See [[EPIC-009-revenue-cycle-completion]] for Sprint 4 claims pipeline integration.
 
 ---
 
-## Denial Management Agent State Machine (Sprint 2)
+## Denial Management Agent State Machine (Sprint 4)
 
 ```mermaid
 stateDiagram-v2
     [*] --> AnalyzeDenial
-    AnalyzeDenial --> AssessAppealViability
-    AssessAppealViability --> ReportNoAppeal: Not Viable
-    AssessAppealViability --> GatherEvidence: Viable
+    AnalyzeDenial --> AssessViability
+    AssessViability --> NoAppeal: Not viable (<30%)
+    AssessViability --> GatherEvidence: Viable (>=30%)
+    NoAppeal --> ReportNoAppeal
+    ReportNoAppeal --> [*]
     GatherEvidence --> DraftAppealLetter
     DraftAppealLetter --> SubmitForApproval
-    SubmitForApproval --> [*]
-    ReportNoAppeal --> [*]
+    SubmitForApproval --> HumanReview
+    HumanReview --> [*]
 ```
 
-See [[EPIC-007-mcp-sdk-refactoring]] T8 for implementation details.
+### Denial Management Agent Summary
+
+The Denial Management Agent analyzes claim denials, assesses appeal viability based on denial reason codes (CARC/RARC) and historical overturn rates, gathers supporting clinical evidence, drafts appeal letters with payer-specific argumentation, and routes to a human reviewer before submission. Non-viable denials (< 30% estimated overturn probability) are reported without appeal to avoid wasted effort.
+
+| Attribute | Detail |
+|-----------|--------|
+| **Module** | C (Claims & Billing) / D (AI & Analytics) |
+| **Trigger** | `claim.denied` event from revenue cycle module |
+| **MCP Tools** | `denial_analyze`, `denial_assess_viability`, `denial_gather_evidence`, `denial_draft_appeal`, `denial_submit_appeal`, `denial_track_status`, `denial_analytics`, `denial_pattern_report` (8 tools via Billing MCP Server) |
+| **Confidence Thresholds** | >= 0.90 auto-draft appeal for review / 0.70-0.90 flag for billing specialist input / < 0.70 escalate to billing manager with full denial analysis |
+| **Authority Constraints** | CANNOT submit appeals to payer without human approval. CANNOT modify original claim data. CANNOT waive patient responsibility. All appeal submissions logged as FHIR AuditEvent. |
+| **Max Daily Auto-Executions** | 0 (always requires human approval before appeal submission) |
+| **Viability Threshold** | < 30% estimated overturn probability = report as legitimate denial, do not appeal |
+
+See [[EPIC-007-mcp-sdk-refactoring]] T8 for Sprint 2 implementation details. See [[EPIC-009-revenue-cycle-completion]] for Sprint 4 claims pipeline integration.
 
 ---
 

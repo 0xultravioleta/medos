@@ -525,6 +525,75 @@ This architecture connects to Module C (claims/billing) and Module D (AI/analyti
 
 ---
 
+## MedOS Implementation
+
+MedOS automates 70-80% of the prior authorization workflow through a combination of payer rule matching, FHIR-native clinical evidence assembly, AI-generated justification narratives, and human-in-the-loop approval. The Prior Authorization Agent (a LangGraph state machine) orchestrates this pipeline end-to-end.
+
+### PA Requirement Checking
+
+When a provider orders a procedure, MedOS checks a **payer-procedure matrix** stored in the tenant database:
+
+1. **Payer rules engine** looks up the patient's active Coverage resource to identify the payer and plan
+2. **Procedure code matching** checks the ordered CPT/HCPCS code against the payer's PA requirement list
+3. **Gold card bypass** checks whether the rendering provider has gold card status for this payer + procedure combination
+4. **Result**: PA required (proceed to evidence gathering) or PA not required (proceed directly to claim generation)
+
+The rules engine updates continuously as payer policies change. Historical approval/denial data feeds back into the matrix to improve accuracy over time.
+
+### Clinical Evidence Gathering from FHIR Resources
+
+The agent queries the FHIR-MCP Server to assemble a clinical evidence package tailored to the payer's criteria:
+
+| FHIR Resource | Evidence Extracted |
+|---------------|-------------------|
+| `Condition` | Primary and secondary diagnoses, onset dates, severity |
+| `Observation` | Lab results, vitals, functional assessments (KOOS, PHQ-9) |
+| `DiagnosticReport` | Imaging reports, pathology results |
+| `Procedure` | Prior treatments (conservative therapy history) |
+| `MedicationStatement` | Current and past medications (step therapy compliance) |
+| `Encounter` | Visit history showing treatment progression |
+| `DocumentReference` | Clinical notes documenting medical necessity |
+
+The agent performs **gap analysis** against payer-specific criteria. If required documentation is missing (e.g., 6 months of conservative treatment for a knee replacement), the agent alerts staff with a specific request rather than submitting an incomplete PA.
+
+### AI-Generated Justification Narratives
+
+Claude (via AWS Bedrock with HIPAA BAA) generates a medical necessity justification narrative:
+
+1. **Input**: Structured clinical evidence from FHIR resources + payer-specific criteria template
+2. **Processing**: Claude synthesizes the evidence into a clinical argument addressing each payer criterion
+3. **Output**: A medical necessity narrative that includes diagnosis history, treatment progression, failed conservative therapy, clinical indicators supporting the requested procedure, and relevant clinical guideline citations
+4. **Confidence scoring**: The narrative includes a confidence score (0.0-1.0). Scores below 0.85 trigger human review before submission. Scores below 0.70 escalate to the billing specialist with a recommendation to gather additional documentation.
+
+The narrative is never submitted directly to the payer -- it always flows through the human approval workflow.
+
+### X12 278 / Da Vinci PAS Form Generation
+
+Depending on the payer's supported submission method, the agent generates:
+
+- **Da Vinci PAS FHIR Bundle**: For payers supporting the CMS-0057-F mandated FHIR API (Claim resource with `use: preauthorization`, supporting clinical documentation as Bundle entries). Submitted via the `$submit` operation.
+- **X12 278 (005010X217)**: For payers still requiring EDI transactions. The agent maps FHIR data to X12 278 segments and submits via clearinghouse (e.g., Availity). See [[X12-EDI-Deep-Dive]] for format details.
+- **Payer portal pre-fill**: For portal-only payers, the agent pre-fills a structured form that staff can copy-paste into the payer's web portal, reducing manual data entry from 20+ minutes to under 2 minutes.
+
+### Human-in-the-Loop Approval Workflow
+
+Every PA submission goes through human review before reaching the payer:
+
+1. Agent generates the complete PA package (evidence, narrative, form)
+2. Package enters the **approval queue** in the MedOS Approvals UI (see [[EPIC-008-demo-polish]])
+3. Staff reviews the submission with the confidence score prominently displayed
+4. Staff can **approve** (submit as-is), **modify** (edit narrative or add documentation), or **reject** (cancel PA attempt)
+5. Upon approval, the agent submits via the appropriate channel (FHIR API, X12 278, or generates portal-ready output)
+6. Agent polls for payer response via `$inquire` or X12 278 inquiry and updates the approval status in real time via WebSocket
+
+This workflow ensures that no AI-generated PA submission reaches a payer without human verification, satisfying both HIPAA compliance requirements and clinical liability concerns.
+
+### Architecture References
+
+The Prior Authorization Agent is specified in [[agent-architecture]] (Section 2.2 and the Prior Authorization Agent State Machine). The agent uses 7 MCP tools from the Prior Auth MCP Server and coordinates with the Denial Management Agent when PAs are denied. The claims pipeline integration (X12 837P generation, scrubbing, and payment posting) is covered in [[EPIC-009-revenue-cycle-completion]].
+
+---
+
 ## Key Connections
 
 - [[X12-EDI-Deep-Dive]] -- X12 278 transaction for PA when FHIR is not available
@@ -536,3 +605,4 @@ This architecture connects to Module C (claims/billing) and Module D (AI/analyti
 - [[ADR-005-mcp-sdk-integration]] -- HIPAAFastMCP security pipeline for PA tools
 - [[EPIC-007-mcp-sdk-refactoring]] -- Prior Auth agent implementation (T7)
 - [[EPIC-008-demo-polish]] -- Patient intake workflow with PA check (T5)
+- [[EPIC-009-revenue-cycle-completion]] -- Claims pipeline (837P, scrubbing, 835, payment posting)
