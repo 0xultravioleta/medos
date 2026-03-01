@@ -85,9 +85,59 @@ For European expansion:
 - De-identification and consent required
 - More complex than HIPAA but achievable with proper setup
 
+## MedOS Integration Architecture
+
+### How MedOS Uses Claude via Bedrock
+
+The MedOS agent framework (see [[agent-architecture]]) calls Claude through a layered stack:
+
+```
+LangGraph Agent -> MCP Gateway -> HIPAAFastMCP -> Claude via Bedrock API
+```
+
+Key integration points:
+- **HIPAAFastMCP** (see [[ADR-005-mcp-sdk-integration]]) overrides `call_tool()` to inject security pipeline before every Claude call
+- **Audit logging** captures every LLM invocation as a FHIR `Provenance` resource (see [[agent-architecture]] Section 2.1)
+- **Credential injection** retrieves Bedrock API credentials from AWS Secrets Manager at runtime -- never hardcoded
+- **PHI handling** ensures patient data sent to Claude stays within the BAA boundary (Bedrock endpoint in VPC via PrivateLink)
+
+### Claude Model Selection per Agent
+
+| Agent | Recommended Model | Rationale |
+|-------|------------------|-----------|
+| Clinical Scribe | Claude Opus 4.6 | Highest accuracy for clinical NLU and SOAP note generation |
+| Prior Auth | Claude Sonnet 4.6 | Good balance of speed and quality for form generation |
+| Denial Management | Claude Sonnet 4.6 | Appeal letters need quality but also fast turnaround |
+| Patient Communication | Claude Haiku 4.5 | High volume, simple responses, cost-sensitive |
+| Quality Reporting | Claude Sonnet 4.6 | Analytical tasks, report generation |
+
+Model selection is configurable per tenant via `TenantAgentConfig` (see [[agent-architecture]] Section 4).
+
+### Bedrock vs Direct API
+
+MedOS uses Bedrock (not direct Anthropic API) because:
+1. BAA is through AWS, covering all data in transit and at rest
+2. VPC endpoints (PrivateLink) keep PHI within our network boundary
+3. CloudWatch integration for LLM call monitoring
+4. IAM-based access control (per-tenant roles)
+5. Terraform-managed infrastructure aligns with our no-CloudFormation rule
+
+### Cost Management
+
+- **Token budgets** per agent type per tenant (prevent runaway costs)
+- **Caching** of common prompts via Bedrock's prompt caching
+- **Model routing** sends simple tasks to Haiku, complex tasks to Opus
+- **Monitoring** via Langfuse: cost per encounter, cost per agent type
+
 ## Related
 
 - [[HEALTHCARE_OS_MASTERPLAN]]
-- [[ADR-003-langgraph-claude-ai-agents]]
-- [[HIPAA Compliance Deep Dive]]
-- [[AWS HIPAA Infrastructure]]
+- [[ADR-003-ai-agent-framework]]
+- [[HIPAA-Deep-Dive]]
+- [[AWS-HIPAA-Infrastructure]]
+- [[agent-architecture]] -- Agent framework consuming Claude
+- [[ADR-005-mcp-sdk-integration]] -- HIPAAFastMCP security pipeline
+- [[mcp-integration-plan]] -- MCP tools powered by Claude
+- [[ml-drift-monitoring]] -- Drift management for Claude-based agents
+- [[EPIC-007-mcp-sdk-refactoring]] -- Sprint 2: agents using Claude
+- [[EPIC-008-demo-polish]] -- Sprint 3: agent runner API

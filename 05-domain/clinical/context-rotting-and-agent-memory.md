@@ -77,8 +77,52 @@ This architecture maps directly to our stack:
 - **Agent framework:** LangGraph (ADR-003) with memory management
 - **Monitoring:** Structured logging + custom drift metrics via [[Audit Logging]]
 
+## MedOS Implementation Details
+
+### How It Maps to Our Agent Architecture
+
+The tiered memory model is implemented concretely in the MedOS agent framework (see [[agent-architecture]] Section 5):
+
+| Tier | MedOS Component | Agent Usage |
+|------|----------------|-------------|
+| Short-term | Redis 7 (ElastiCache) | Clinical Scribe holds current transcript + extracted entities during encounter. TTL: 2 hours. |
+| Mid-term | pgvector in PostgreSQL 17 | Denial Management Agent queries similar past denials via vector similarity to inform appeal strategy. |
+| Long-term | FHIR JSONB in PostgreSQL | Golden source. All 5 agents validate their context against FHIR resources before outputting results. |
+
+### Context Rot in Clinical Documentation
+
+The Clinical Documentation Agent is most vulnerable to context rot during long encounters (30+ minutes):
+
+1. **Symptom:** Agent starts repeating information from the first 10 minutes, ignoring later clinical findings
+2. **Detection:** Cosine similarity between the agent's current context summary and a fresh FHIR query drops below 0.75
+3. **Mitigation:** LangGraph checkpointer snapshots state every 5 minutes. On refresh, stale context is pruned and re-embedded from the transcript segments
+
+### Context Rot in Revenue Cycle Agents
+
+Prior Auth and Denial Management agents face a different form of context rot:
+
+1. **Payer rule staleness:** Insurance company PA requirements change quarterly. If the agent's payer rule cache is outdated, it may generate incorrect PA forms
+2. **Detection:** Compare cached payer rules against the Billing MCP `billing_payer_rules` tool output
+3. **Mitigation:** Payer rule embeddings re-indexed weekly via scheduled job. See [[mcp-integration-plan]] Section 3.2 for the Billing MCP tool details
+
+### Confidence Score Integration
+
+Context health directly affects confidence scores in the [[agent-architecture]] Bounded Autonomy Framework:
+
+- Context similarity >= 0.85: No impact on confidence
+- Context similarity 0.75-0.85: Confidence score reduced by 10%
+- Context similarity < 0.75: Agent pauses, refreshes context, then continues
+- Context unsalvageable: Agent enters "safe mode" and escalates to human
+
+This is enforced by the `ContextHealthMonitor` class in the agent framework.
+
 ## Related
 
 - [[HEALTHCARE_OS_MASTERPLAN]]
-- [[ADR-003-langgraph-claude-ai-agents]]
+- [[ADR-003-ai-agent-framework]]
 - [[ADR-001-fhir-native-data-model]]
+- [[agent-architecture]] -- Section 5: Memory Architecture
+- [[mcp-integration-plan]] -- MCP servers that provide fresh context
+- [[ml-drift-monitoring]] -- Related: model output drift detection
+- [[EPIC-007-mcp-sdk-refactoring]] -- MCP tools agents use to refresh context
+- [[EPIC-008-demo-polish]] -- Sprint 3 agent runner and workflow orchestration
