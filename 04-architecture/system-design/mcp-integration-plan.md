@@ -431,12 +431,12 @@ Instead of fully custom MCP, we now subclass `FastMCP` from the official SDK:
 - SDK handles JSON-RPC, SSE transport, input schema generation
 - Our security pipeline (auth, PHI, rate limit, audit) stays intact
 
-### Tool Count: 32 Total
+### Tool Count: 36 Total
 | Server | Tools | Status |
 |--------|-------|--------|
 | FHIR | 12 | Migrated to @hipaa_tool |
 | Scribe | 6 | Migrated to @hipaa_tool |
-| Billing | 8 | NEW in Sprint 2 |
+| Billing | 12 | 8 Sprint 2 + 4 Claims Pipeline Sprint 4 |
 | Scheduling | 6 | NEW in Sprint 2 |
 
 See [[ADR-005-mcp-sdk-integration]] for decision rationale.
@@ -488,15 +488,15 @@ flowchart TD
     style ApprovalDB fill:#fce4ec
 ```
 
-### Tool Count: 32 Confirmed (Sprint 2 Complete)
+### Tool Count: 36 Confirmed (Sprint 4 Complete)
 
 | Server | Tools | Status | Sprint |
 |--------|-------|--------|--------|
 | FHIR | 12 | Done (migrated to @hipaa_tool) | Sprint 1 -> 2 |
 | Scribe | 6 | Done (migrated to @hipaa_tool) | Sprint 1 -> 2 |
-| Billing | 8 | Done (NEW in Sprint 2) | Sprint 2 |
+| Billing | 12 | Done (8 Sprint 2 + 4 Sprint 4) | Sprint 2, 4 |
 | Scheduling | 6 | Done (NEW in Sprint 2) | Sprint 2 |
-| **Total** | **32** | **All operational** | |
+| **Total** | **36** | **All operational** | |
 
 ### Sprint 3 MCP Usage
 

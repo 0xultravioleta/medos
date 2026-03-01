@@ -1,7 +1,7 @@
 # CLAUDE.md - MedOS Healthcare OS
 
 > Instrucciones operativas para Claude al trabajar en el proyecto MedOS.
-> Actualizado: 2026-02-28
+> Actualizado: 2026-02-28 (Sprint 5 in-progress)
 
 ---
 
@@ -48,8 +48,17 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | S2 | W5-6 | MCP SDK refactoring, 32 tools, 3 agents, HIPAAFastMCP | done |
 | S3 | W7-8 | Demo polish: Approvals UI, WebSocket, agent runner, intake workflow | done |
 | S4 | W9-10 | Revenue cycle completion: X12 837P, scrubbing, 835 parser, PA, denials, analytics | done |
-| S5 | W11-12 | Security hardening, pen test, onboarding | **in-progress** |
+| S5 | W11-12 | Security hardening, field encryption, tenant onboarding, EHR bridge, monitoring, load testing | **in-progress** |
 | S6 | W13 | Prod deploy, pilot onboarding, go-live | pending |
+
+### Platform Metrics (Sprint 5)
+| Metric | Count |
+|--------|-------|
+| Tests passing | 407+ |
+| MCP tools | 36 |
+| LangGraph agents | 5 |
+| Frontend routes | 21+ |
+| Vault docs | 50+ |
 
 ---
 
@@ -133,7 +142,14 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | `06-engineering/infrastructure/AWS-HIPAA-Infrastructure.md` | Terraform + AWS setup |
 | `06-engineering/security/Auth-SMART-on-FHIR.md` | Auth0, RBAC, audit trail |
 | `06-engineering/security/NextJS-Healthcare-Frontend.md` | Server Components, PHI safety |
-| `06-engineering/api-specs/LangGraph-Agent-Implementation.md` | 4 agents con codigo |
+| `06-engineering/api-specs/LangGraph-Agent-Implementation.md` | 5 agents con codigo |
+
+### Sprint 5 Security & Compliance
+| Archivo | Proposito |
+|---------|-----------|
+| `04-architecture/system-design/System-Architecture-Overview.md` | Security middleware, field encryption, monitoring sections |
+| `04-architecture/system-design/agent-architecture.md` | Agent Security Model (credential injection, PHI policies, safety pipeline) |
+| `03-projects/EPIC-010-security-pilot-readiness.md` | Sprint 5 task tracking (12 tasks) |
 
 ---
 

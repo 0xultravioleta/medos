@@ -693,17 +693,19 @@ graph TB
         FastAPI[FastAPI + HIPAAFastMCP]
         Gateway[MCP Gateway]
 
-        subgraph MCP_Servers[MCP Servers - 32 Tools]
+        subgraph MCP_Servers[MCP Servers - 36 Tools]
             FHIR[FHIR Server - 12 tools]
             Scribe[Scribe Server - 6 tools]
             Billing[Billing Server - 8 tools]
             Schedule[Scheduling Server - 6 tools]
         end
 
-        subgraph Agents[LangGraph Agents]
+        subgraph Agents[LangGraph Agents - 5]
             CS[Clinical Scribe]
             PA[Prior Auth]
             DM[Denial Management]
+            BA[Billing Agent]
+            SA[Scheduling Agent]
         end
     end
 
@@ -808,6 +810,183 @@ Each step emits WebSocket events for real-time frontend updates. See [[Clinical-
 
 ---
 
+## Security Middleware Stack (Sprint 5)
+
+Sprint 5 ([[EPIC-010-security-pilot-readiness]]) introduces a production-grade security middleware pipeline that wraps every FastAPI request. These middlewares execute in order before the request reaches any router.
+
+### PHISafeErrorHandler
+
+Strips PHI from error responses. When an unhandled exception occurs, the handler catches it, logs the full stack trace (internally, never exposed), and returns a generic FHIR OperationOutcome with a correlation ID. The caller never sees patient names, MRNs, SSNs, or any of the 18 HIPAA identifiers in error output.
+
+### RateLimiter
+
+Token bucket algorithm with per-client rate limiting. Configurable burst and sustained rates per endpoint category:
+
+| Endpoint Category | Burst | Sustained | Window |
+|---|---|---|---|
+| Auth (login, token) | 10 | 10/min | 1 min |
+| FHIR Search | 200 | 100/min | 1 min |
+| FHIR Write | 100 | 50/min | 1 min |
+| AI Pipeline | 20 | 10/min | 1 min |
+| MCP Gateway | 100 | 50/min | 1 min |
+
+### InputValidator
+
+Validates all incoming requests before they reach business logic:
+
+- Max body size enforcement (10MB default, 50MB for audio uploads)
+- Content-type validation (reject unexpected MIME types)
+- SQL injection pattern detection in query parameters and body
+- XSS pattern detection in string fields
+- Path traversal detection in URL segments and file references
+- FHIR-specific validation (resource type names, search parameter formats)
+
+### SecurityHeaders
+
+Applied to all outbound responses:
+
+| Header | Value | Purpose |
+|---|---|---|
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Force HTTPS |
+| `X-Frame-Options` | `DENY` | Prevent clickjacking |
+| `X-Content-Type-Options` | `nosniff` | Prevent MIME sniffing |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'` | Restrict resource loading |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer leakage |
+| `X-Request-Id` | `{uuid}` | Correlation ID for tracing |
+
+---
+
+## Field-Level Encryption (Sprint 5)
+
+Beyond database-level TDE and S3 SSE-KMS, Sprint 5 adds application-layer field-level encryption for the most sensitive patient identifiers. This ensures that even with direct database access, raw SSN/MRN values are never visible.
+
+### Architecture
+
+```
+Patient Data In → Encrypt(SSN, MRN, DOB) → Store ciphertext in PostgreSQL
+                                                    |
+Patient Data Out ← Decrypt(SSN, MRN, DOB) ← Read ciphertext from PostgreSQL
+```
+
+### Key Derivation
+
+- Per-tenant master key stored in AWS KMS
+- PBKDF2 derives field-specific encryption keys from the tenant master key
+- Each field type (SSN, MRN, DOB) gets a unique derived key
+- Key rotation: new master key encrypts new records; old master key retained for decryption of existing records (envelope encryption pattern)
+
+### Encryption Algorithm
+
+- Fernet (AES-128-CBC + HMAC-SHA256) for field values
+- Deterministic encryption option for SSN (allows exact-match search on ciphertext)
+- Transparent encrypt/decrypt helpers in the data access layer
+- Performance target: < 50ms per field operation
+
+### Encrypted Fields
+
+| Field | Resource | Encryption Mode |
+|---|---|---|
+| SSN | Patient | Deterministic (searchable) |
+| MRN | Patient | Deterministic (searchable) |
+| DOB | Patient | Randomized |
+| Subscriber ID | Coverage | Deterministic (searchable) |
+| Bank Account | ClaimResponse | Randomized |
+
+---
+
+## Data Migration & EHR Integration (Sprint 5)
+
+Sprint 5 adds production-grade data migration and EHR connectivity for pilot practice onboarding. See [[EPIC-010-security-pilot-readiness]] T6 and T7.
+
+### CSV Patient Import
+
+- Configurable column mapping (map CSV headers to FHIR Patient fields)
+- FHIR Patient resource validation before creation
+- Patient matching algorithm for duplicate detection (configurable threshold)
+- Manual review queue for uncertain matches (< 5% target)
+- Batch capacity: 1000+ patients per import
+
+### HL7v2 ADT Message Parsing
+
+- Parses PID segments from ADT messages (A01, A04, A08)
+- Extracts demographics: name, DOB, gender, address, phone, SSN, MRN
+- Transforms to FHIR Patient resources
+- Handles HL7v2 encoding (field separators, component separators, escape sequences)
+
+### FHIR R4 Client for External EHR
+
+- SMART on FHIR backend services authentication
+- Read Patient resources from Epic and Cerner sandbox environments
+- Create corresponding MedOS Patient resources with FHIR Provenance tracking
+- Bidirectional demographics sync (name, DOB, address, phone, insurance)
+- Conflict resolution: external EHR is source of truth for demographics
+- Connection health monitoring with retry logic and circuit breaker
+
+### Data Sync Flow
+
+```mermaid
+sequenceDiagram
+    participant EHR as External EHR (Epic/Cerner)
+    participant Bridge as EHR Bridge Service
+    participant MedOS as MedOS FHIR Store
+    participant Audit as Audit Log
+
+    Note over EHR,Audit: Initial Patient Sync
+    Bridge->>EHR: GET /fhir/r4/Patient?_lastUpdated=gt{timestamp}
+    EHR-->>Bridge: Bundle of Patient resources
+    Bridge->>Bridge: Match against existing MedOS patients
+    Bridge->>MedOS: POST /fhir/r4/Patient (new) or PUT (update)
+    Bridge->>MedOS: POST /fhir/r4/Provenance (track source)
+    Bridge->>Audit: Log sync event (count, matches, conflicts)
+```
+
+---
+
+## Monitoring & Alerting (Sprint 5)
+
+Sprint 5 introduces a comprehensive monitoring and alerting layer for production readiness. See [[EPIC-010-security-pilot-readiness]] T10 and T12.
+
+### MetricsCollector
+
+In-memory request metrics aggregation that tracks per-endpoint:
+
+- Request count, error count, latency percentiles (P50, P95, P99)
+- Response size distribution
+- HTTP status code breakdown
+- Tenant-level metrics (per-tenant request volume)
+
+Metrics are flushed to CloudWatch every 60 seconds.
+
+### AlertManager
+
+Threshold-based alerting rules with configurable severity:
+
+| Metric | Warning | Critical | Action |
+|---|---|---|---|
+| Error rate (5xx) | > 3% (5 min) | > 5% (5 min) | PagerDuty page |
+| API P99 latency | > 1.5s | > 2s | PagerDuty page |
+| DB connection pool utilization | > 70% | > 85% | PagerDuty page |
+| CPU utilization | > 70% | > 80% | Auto-scale + notify |
+| Memory utilization | > 75% | > 85% | PagerDuty page |
+| LLM error rate | > 5% | > 10% | Slack alert + fallback |
+| Queue depth | > 500 | > 1000 | Scale workers |
+
+### Health Dashboard API
+
+- `GET /health` -- Basic liveness check
+- `GET /health/ready` -- Readiness check (DB, Redis, Claude connectivity)
+- `GET /health/metrics` -- Prometheus-compatible metrics export
+- `GET /api/v1/admin/dashboard` -- Aggregated system health for admin UI
+
+### Load Testing Infrastructure
+
+- Target: 50 concurrent users, 100 encounters/hour sustained
+- Test scenarios: FHIR CRUD, AI documentation, claims processing, analytics queries
+- Success criteria: P99 < 1s, zero errors, zero data loss
+- Tools: Locust for HTTP load, custom scripts for WebSocket and agent pipeline
+
+---
+
 ## References
 
 - [[HEALTHCARE_OS_MASTERPLAN]] -- Strategic vision and module definitions
@@ -818,3 +997,4 @@ Each step emits WebSocket events for real-time frontend updates. See [[Clinical-
 - [[ADR-002-multi-tenancy-schema-per-tenant]] -- Multi-tenancy architecture decision
 - [[ADR-003-ai-agent-framework]] -- AI agent framework decision
 - [[ADR-004-fastapi-backend-architecture]] -- Backend framework decision
+- [[EPIC-010-security-pilot-readiness]] -- Sprint 5 security hardening and pilot readiness

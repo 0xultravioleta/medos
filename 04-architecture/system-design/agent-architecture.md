@@ -1132,6 +1132,82 @@ This pipeline is enforced at the framework level via `HIPAAFastMCP.call_tool()` 
 
 ---
 
+## Agent Security Model (Sprint 5)
+
+Sprint 5 ([[EPIC-010-security-pilot-readiness]]) introduces a hardened agent security model. Every agent operates within a security envelope that prevents unauthorized data access, enforces minimum-necessary PHI exposure, and routes low-confidence outputs to human review.
+
+### Credential Injection
+
+Agents **never see raw credentials**. The MCP Gateway injects credentials at the transport layer:
+
+1. Agent requests a tool call (e.g., `fhir_read`, `billing_submit_claim`)
+2. MCP Gateway intercepts the request
+3. Gateway retrieves the required credential from AWS Secrets Manager
+4. Gateway injects the credential into the outbound request to the MCP server
+5. MCP server executes with the credential; response flows back to agent
+6. Agent receives only the data response -- never the credential itself
+
+This ensures that even if an agent's state is logged, dumped, or inspected, no credentials are ever present in agent memory.
+
+### PHI Access Policies per Agent Type
+
+Each agent type has explicit PHI access boundaries enforced by the MCP Gateway:
+
+| Agent | PHI Access Level | Allowed FHIR Resources | Restricted Fields |
+|---|---|---|---|
+| Clinical Scribe | Full clinical | Patient, Encounter, Observation, Condition, Procedure | Financial data |
+| Prior Auth | Clinical + coverage | Patient, Encounter, Coverage, Claim | SSN (masked) |
+| Denial Management | Billing + limited clinical | Claim, ClaimResponse, ExplanationOfBenefit, Patient (demographics only) | Full clinical notes |
+| Billing | Billing only | Claim, Coverage, Invoice, Patient (demographics only) | All clinical data |
+| Scheduling | Demographics only | Patient (name, DOB, phone), Appointment, Schedule, Slot | Clinical data, SSN, insurance |
+
+### Safety Layer Pipeline
+
+Every agent output passes through a 4-stage safety pipeline before reaching the user or being persisted:
+
+```
+Agent Output → [Block] → [Warn] → [Review] → [Sanitize] → Delivered
+```
+
+| Stage | Purpose | Trigger | Action |
+|---|---|---|---|
+| **Block** | Prevent dangerous content | Detected medication advice, diagnosis generation, or treatment recommendations from non-clinical agents | Hard stop; output discarded; incident logged |
+| **Warn** | Flag potentially unsafe content | Unusual patterns (unexpected PHI in billing output, contradictory clinical data) | Output delivered with warning flag; logged for review |
+| **Review** | Route to human review | Confidence < 0.85 for clinical output, any financial transaction > $1000 | Output queued in approval queue; not delivered until human approves |
+| **Sanitize** | Strip PHI from non-clinical outputs | Non-clinical agent (billing, scheduling) producing output containing HIPAA identifiers | PHI fields masked or removed before delivery |
+
+### Confidence Routing
+
+Confidence scores determine whether agent output proceeds automatically or requires human intervention:
+
+| Confidence Range | Action | Use Case |
+|---|---|---|
+| >= 0.95 | Auto-approve | High-confidence ICD-10 codes, routine claim submissions |
+| >= 0.85 | Pass (execute with audit) | Standard SOAP notes, eligibility checks |
+| 0.70 - 0.85 | Flag for review | Uncertain diagnoses, complex claims |
+| < 0.70 | Human review required | Novel clinical presentations, high-value procedures, appeals |
+| Any (critical action) | Always human review | Financial transactions, prior auth submissions, signed documents |
+
+### Agent Audit Trail
+
+Every agent action generates a FHIR AuditEvent:
+
+```python
+class AgentAuditEvent:
+    agent_type: str          # clinical_scribe, prior_auth, etc.
+    agent_run_id: str        # LangGraph thread ID
+    action: str              # tool_call, output_generated, escalated, blocked
+    tool_name: str | None    # MCP tool invoked (if applicable)
+    confidence: float | None # Confidence score (if applicable)
+    safety_stage: str        # block, warn, review, sanitize, pass
+    tenant_id: str
+    patient_id: str | None   # If PHI was accessed
+    timestamp: datetime
+    correlation_id: str      # Links to parent request
+```
+
+---
+
 ## References
 
 - [[HEALTHCARE_OS_MASTERPLAN]] -- Full vision and module definitions
@@ -1147,3 +1223,4 @@ This pipeline is enforced at the framework level via `HIPAAFastMCP.call_tool()` 
 - [[HIPAA-Deep-Dive]] -- HIPAA compliance requirements
 - [[mcp-integration-plan]] -- MCP integration strategy
 - [[MOC-Agent-Architecture]] -- Navigation index for agent docs
+- [[EPIC-010-security-pilot-readiness]] -- Sprint 5 security hardening

@@ -109,15 +109,15 @@ Scope and engage a third-party penetration testing vendor to test MedOS API endp
 Comprehensive security hardening pass across the entire stack: WAF rules tuned for healthcare-specific attacks, rate limiting on all API endpoints (especially auth and FHIR search), input validation on all user-facing endpoints, error message sanitization to ensure no PHI leaks in error responses, CORS configuration locked to known origins, and CSP headers for the frontend.
 
 **Acceptance Criteria:**
-- [ ] WAF rules tuned (SQL injection, XSS, path traversal, FHIR-specific patterns)
-- [ ] Rate limiting configured on all API endpoints (auth: 10/min, FHIR search: 100/min, write: 50/min)
-- [ ] Input validation comprehensive on all endpoints (Pydantic models, max lengths, allowed characters)
-- [ ] Error responses sanitized -- no PHI in any error message or stack trace
-- [ ] CORS locked to known origins (frontend domain only)
-- [ ] CSP headers configured for Next.js frontend
-- [ ] OWASP Top 10 checklist verified
+- [x] WAF rules tuned (SQL injection, XSS, path traversal, FHIR-specific patterns)
+- [x] Rate limiting configured on all API endpoints (auth: 10/min, FHIR search: 100/min, write: 50/min)
+- [x] Input validation comprehensive on all endpoints (Pydantic models, max lengths, allowed characters)
+- [x] Error responses sanitized -- no PHI in any error message or stack trace
+- [x] CORS locked to known origins (frontend domain only)
+- [x] CSP headers configured for Next.js frontend
+- [x] OWASP Top 10 checklist verified
 
-**Status:** in-progress
+**Status:** done
 
 ---
 
@@ -140,7 +140,7 @@ Implement field-level encryption for SSN and other sensitive identifiers (MRN, i
 - [ ] Key rotation supported without re-encrypting all data (envelope encryption)
 - [ ] Performance impact < 50ms per field encryption/decryption operation
 
-**Status:** pending
+**Status:** in-progress
 
 ---
 
@@ -156,16 +156,16 @@ Implement field-level encryption for SSN and other sensitive identifiers (MRN, i
 Build a multi-step onboarding wizard that allows a new practice to self-onboard: enter organization info (name, NPI, Tax ID, address), create admin user account, configure practice settings (specialties, locations, providers, payer contracts). The wizard creates the tenant schema, provisions KMS key, seeds initial configuration, and activates the tenant.
 
 **Acceptance Criteria:**
-- [ ] Multi-step wizard UI (org info -> admin user -> practice config -> confirmation)
-- [ ] Tenant schema created with RLS policies
-- [ ] Per-tenant KMS key provisioned
-- [ ] Admin user account created with appropriate RBAC roles
-- [ ] Practice configuration seeded (specialties, locations, providers)
-- [ ] Payer contracts configurable during onboarding
-- [ ] Wizard validates all inputs before proceeding to next step
-- [ ] Onboarding completion triggers welcome email
+- [x] Multi-step wizard UI (org info -> admin user -> practice config -> confirmation)
+- [x] Tenant schema created with RLS policies
+- [x] Per-tenant KMS key provisioned
+- [x] Admin user account created with appropriate RBAC roles
+- [x] Practice configuration seeded (specialties, locations, providers)
+- [x] Payer contracts configurable during onboarding
+- [x] Wizard validates all inputs before proceeding to next step
+- [x] Onboarding completion triggers welcome email
 
-**Status:** in-progress
+**Status:** done
 
 ---
 
@@ -190,7 +190,7 @@ Build a data migration tool that imports patient demographics from CSV and HL7v2
 - [ ] Import report: total records, created, matched, duplicates, errors
 - [ ] Handles 1000+ patients in a single import batch
 
-**Status:** pending
+**Status:** in-progress
 
 ---
 
@@ -214,7 +214,7 @@ Build a FHIR R4 client that connects to Epic and Cerner sandbox environments, re
 - [ ] Conflict resolution strategy for concurrent edits
 - [ ] Connection health monitoring and retry logic
 
-**Status:** pending
+**Status:** in-progress
 
 ---
 
@@ -253,15 +253,15 @@ Create video walkthroughs (Loom recordings) for three core user personas: provid
 Build an admin configuration panel where practice administrators can manage all practice settings post-onboarding: add/remove providers, manage locations, update fee schedules, configure payer contracts, set specialty-specific settings (e.g., orthopedic-specific CPT code favorites), and manage user roles.
 
 **Acceptance Criteria:**
-- [ ] Provider management: add, edit, deactivate providers (NPI, specialty, schedule)
-- [ ] Location management: add, edit locations (address, phone, place of service code)
-- [ ] Fee schedule management: upload/edit fee schedules per payer
-- [ ] Payer contract management: add/edit payer contracts with effective dates
-- [ ] Specialty settings: CPT favorites, diagnosis favorites, default modifiers
-- [ ] User role management: assign/revoke roles (provider, billing, admin, front desk)
-- [ ] All changes audit-logged
+- [x] Provider management: add, edit, deactivate providers (NPI, specialty, schedule)
+- [x] Location management: add, edit locations (address, phone, place of service code)
+- [x] Fee schedule management: upload/edit fee schedules per payer
+- [x] Payer contract management: add/edit payer contracts with effective dates
+- [x] Specialty settings: CPT favorites, diagnosis favorites, default modifiers
+- [x] User role management: assign/revoke roles (provider, billing, admin, front desk)
+- [x] All changes audit-logged
 
-**Status:** in-progress
+**Status:** done
 
 ---
 
@@ -284,7 +284,7 @@ Implement CloudWatch dashboards showing API latency, error rates, throughput, an
 - [ ] Cost monitoring dashboard: daily/weekly AWS spend with budget alerts
 - [ ] Dashboard accessible to on-call engineer without AWS console access
 
-**Status:** pending
+**Status:** in-progress
 
 ---
 
@@ -333,7 +333,7 @@ Simulate pilot practice load: 50 concurrent users, 100 encounters per hour, with
 - [ ] Database connection pool adequate (no connection exhaustion)
 - [ ] Load test report with bottleneck analysis
 
-**Status:** pending
+**Status:** in-progress
 
 ---
 
