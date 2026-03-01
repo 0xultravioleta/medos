@@ -1,7 +1,7 @@
 # CLAUDE.md - MedOS Healthcare OS
 
 > Instrucciones operativas para Claude al trabajar en el proyecto MedOS.
-> Actualizado: 2026-02-28 (Sprint 5 in-progress)
+> Actualizado: 2026-02-28 (Sprint 6 in-progress)
 
 ---
 
@@ -48,10 +48,10 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | S2 | W5-6 | MCP SDK refactoring, 32 tools, 3 agents, HIPAAFastMCP | done |
 | S3 | W7-8 | Demo polish: Approvals UI, WebSocket, agent runner, intake workflow | done |
 | S4 | W9-10 | Revenue cycle completion: X12 837P, scrubbing, 835 parser, PA, denials, analytics | done |
-| S5 | W11-12 | Security hardening, field encryption, tenant onboarding, EHR bridge, monitoring, load testing | **in-progress** |
-| S6 | W13 | Prod deploy, pilot onboarding, go-live | pending |
+| S5 | W11-12 | Security hardening, field encryption, tenant onboarding, EHR bridge, monitoring, load testing | done |
+| S6 | W13 | Prod deploy, pilot onboarding, go-live | **in-progress** |
 
-### Platform Metrics (Sprint 5)
+### Platform Metrics (Sprint 6)
 | Metric | Count |
 |--------|-------|
 | Tests passing | 407+ |
@@ -89,7 +89,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 |---------|-----------|
 | `03-projects/PRE-DEV-CHECKLIST.md` | Todo ANTES de Sprint 0 |
 | `03-projects/PHASE-1-EXECUTION-PLAN.md` | 117 tasks, dia-a-dia |
-| `03-projects/EPIC-001` a `EPIC-010` | Detalle por area (001-006 Foundation, 007 MCP SDK, 008 Demo Polish, 009 Revenue Cycle Completion, 010 Security & Pilot Readiness) |
+| `03-projects/EPIC-001` a `EPIC-011` | Detalle por area (001-006 Foundation, 007 MCP SDK, 008 Demo Polish, 009 Revenue Cycle Completion, 010 Security & Pilot Readiness, 011 Launch & Go-Live) |
 
 ### Arquitectura (como hacerlo)
 | Archivo | Decision |
@@ -135,6 +135,13 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | Archivo | Proposito |
 |---------|-----------|
 | `03-projects/EPIC-010-*` | Security hardening & pilot readiness: HIPAA risk assessment, pen test, onboarding wizard, EHR bridge, training |
+
+### Sprint 6 Files
+| Archivo | Proposito |
+|---------|-----------|
+| `03-projects/EPIC-011-*` | Launch & go-live: prod deploy, demo data, monitoring rotation, communication plan, pilot onboarding |
+| `09-handoffs/operations/monitoring-rotation-runbook.md` | Daily monitoring procedures, alert response, rotation schedule |
+| `09-handoffs/operations/pilot-communication-plan.md` | Communication channels, check-in cadence, escalation matrix, stakeholder updates |
 
 ### Engineering (guias de implementacion)
 | Archivo | Guia |
