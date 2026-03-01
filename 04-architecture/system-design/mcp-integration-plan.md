@@ -422,6 +422,94 @@ MCP servers enforce tenant isolation at the data layer:
 
 ---
 
+## Hybrid Approach: HIPAAFastMCP (Sprint 2)
+
+Instead of fully custom MCP, we now subclass `FastMCP` from the official SDK:
+
+- `HIPAAFastMCP(FastMCP)` overrides `call_tool()` for security pipeline
+- `@hipaa_tool` decorator replaces tuple-based registration
+- SDK handles JSON-RPC, SSE transport, input schema generation
+- Our security pipeline (auth, PHI, rate limit, audit) stays intact
+
+### Tool Count: 32 Total
+| Server | Tools | Status |
+|--------|-------|--------|
+| FHIR | 12 | Migrated to @hipaa_tool |
+| Scribe | 6 | Migrated to @hipaa_tool |
+| Billing | 8 | NEW in Sprint 2 |
+| Scheduling | 6 | NEW in Sprint 2 |
+
+See [[ADR-005-mcp-sdk-integration]] for decision rationale.
+
+---
+
+## Agent Runner Integration (Sprint 3)
+
+Sprint 3 ([[EPIC-008-demo-polish]]) introduces the Agent Runner API, which provides a unified interface for triggering LangGraph agents. The agent runner interacts with MCP servers through the gateway, enabling the frontend to invoke any agent via a single endpoint.
+
+```mermaid
+flowchart TD
+    Frontend[Next.js Frontend] -->|POST /api/v1/agents/run| Runner[Agent Runner API]
+    Runner --> Queue[Task Queue]
+    Queue --> Router{Agent Router}
+
+    Router -->|clinical_scribe| Scribe[Clinical Scribe Agent]
+    Router -->|prior_auth| PA[Prior Auth Agent]
+    Router -->|denial_management| DM[Denial Management Agent]
+
+    subgraph "MCP Layer"
+        GW[MCP Gateway]
+        FHIR[FHIR Server - 12 tools]
+        ScribeMCP[Scribe Server - 6 tools]
+        Billing[Billing Server - 8 tools]
+        Schedule[Scheduling Server - 6 tools]
+    end
+
+    Scribe --> GW
+    PA --> GW
+    DM --> GW
+    GW --> FHIR
+    GW --> ScribeMCP
+    GW --> Billing
+    GW --> Schedule
+
+    Scribe -->|events| WS[WebSocket]
+    PA -->|events| WS
+    DM -->|events| WS
+    WS -->|real-time| Frontend
+
+    Scribe -->|approval needed| ApprovalDB[(Approval Queue)]
+    PA -->|approval needed| ApprovalDB
+    DM -->|approval needed| ApprovalDB
+    ApprovalDB -->|notification| WS
+
+    style Frontend fill:#e1f5fe
+    style GW fill:#fff3e0
+    style ApprovalDB fill:#fce4ec
+```
+
+### Tool Count: 32 Confirmed (Sprint 2 Complete)
+
+| Server | Tools | Status | Sprint |
+|--------|-------|--------|--------|
+| FHIR | 12 | Done (migrated to @hipaa_tool) | Sprint 1 -> 2 |
+| Scribe | 6 | Done (migrated to @hipaa_tool) | Sprint 1 -> 2 |
+| Billing | 8 | Done (NEW in Sprint 2) | Sprint 2 |
+| Scheduling | 6 | Done (NEW in Sprint 2) | Sprint 2 |
+| **Total** | **32** | **All operational** | |
+
+### Sprint 3 MCP Usage
+
+Sprint 3 does not add new MCP tools but introduces new patterns for consuming them:
+
+1. **Agent Runner** provides a unified API for triggering agents that use MCP tools
+2. **Patient Intake Workflow** chains multiple MCP tool calls across servers in a single orchestrated flow
+3. **WebSocket events** broadcast MCP tool execution progress to the frontend in real-time
+
+See [[EPIC-008-demo-polish]] for the full Sprint 3 scope.
+
+---
+
 ## References
 
 - [[agent-architecture]] -- Agent framework that consumes MCP servers

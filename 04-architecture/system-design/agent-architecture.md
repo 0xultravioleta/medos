@@ -835,6 +835,181 @@ class AgentIdentity(BaseModel):
 
 ---
 
+## Approval Workflow (Sprint 3)
+
+The approval workflow is the bridge between AI agents and human decision-makers. Every agent output that requires human review (clinical notes, prior auth requests, appeal letters) flows through this pipeline. See [[EPIC-008-demo-polish]] T1 for the frontend implementation and [[EPIC-007-mcp-sdk-refactoring]] T9 for the backend API.
+
+### Approval Workflow Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant User as Frontend User
+    participant API as FastAPI Backend
+    participant Runner as Agent Runner
+    participant Agent as LangGraph Agent
+    participant MCP as MCP Gateway
+    participant WS as WebSocket
+    participant DB as PostgreSQL
+
+    User->>API: POST /api/v1/agents/run {agent_type, params}
+    API->>Runner: Queue agent task
+    API-->>User: {task_id, status: "queued"}
+    Runner->>Agent: Execute state machine
+    Agent->>MCP: call_tool (FHIR read, billing, etc.)
+    MCP-->>Agent: Tool results
+    Agent->>Agent: Generate output (SOAP note / PA form / appeal)
+    Agent->>Agent: Calculate confidence score
+
+    alt Confidence >= 0.95 (auto-approve path)
+        Agent->>DB: Store output (status: auto-approved)
+        Agent->>WS: agent.output_ready
+    else Confidence < 0.95 (human review path)
+        Agent->>DB: Create ApprovalTask (status: pending)
+        Agent->>WS: agent.approval_created
+        WS-->>User: Real-time notification (badge update)
+    end
+
+    Note over User,DB: Human Review Phase
+    User->>API: GET /api/v1/approvals (list pending)
+    API-->>User: Approval cards with confidence scores
+
+    alt Approve
+        User->>API: POST /api/v1/approvals/{id}/approve
+        API->>DB: Update status: approved
+        API->>WS: approval.resolved
+    else Reject
+        User->>API: POST /api/v1/approvals/{id}/reject {reason}
+        API->>DB: Update status: rejected
+        API->>WS: approval.resolved
+    else Modify
+        User->>API: POST /api/v1/approvals/{id}/modify {changes}
+        API->>DB: Update output + status: approved-with-changes
+        API->>WS: approval.resolved
+    end
+```
+
+### Full Patient Data Flow
+
+This diagram traces the complete data flow from patient check-in through claim resolution, showing how all five agents and MCP servers coordinate. This is the end-to-end workflow that the [[EPIC-008-demo-polish]] patient intake demo (T5) implements.
+
+```mermaid
+flowchart TD
+    A[Patient Check-in] --> B[Eligibility Verification]
+    B --> C{Eligible?}
+    C -->|No| D[Alert Front Desk]
+    C -->|Yes| E[Schedule / Confirm Appointment]
+    E --> F[Create Encounter]
+    F --> G[Ambient Audio Capture]
+
+    subgraph "Clinical Documentation Agent"
+        G --> H[Whisper Transcription]
+        H --> I[Claude Clinical NLU]
+        I --> J[Generate SOAP Note]
+        J --> K[Suggest ICD-10 + CPT]
+    end
+
+    K --> L{Provider Review}
+    L -->|Approve| M[Finalize Note + Codes]
+    L -->|Edit| J
+
+    M --> N{PA Required?}
+
+    subgraph "Prior Auth Agent"
+        N -->|Yes| O[Gather Clinical Evidence]
+        O --> P[Generate PA Form]
+        P --> Q[Submit for Staff Approval]
+        Q --> R[Submit to Payer]
+    end
+
+    N -->|No| S[Generate Claim]
+
+    subgraph "Revenue Cycle"
+        R --> S
+        S --> T[X12 837P Submission]
+        T --> U{Claim Result}
+    end
+
+    U -->|Accepted| V[Payment Posted]
+    U -->|Denied| W[Denial Management Agent]
+
+    subgraph "Denial Management Agent"
+        W --> X[Analyze Denial Codes]
+        X --> Y{Appeal Viable?}
+        Y -->|Yes| Z[Draft Appeal Letter]
+        Z --> AA[Submit for Staff Approval]
+        AA --> AB[Submit Appeal]
+        Y -->|No| AC[Report Legitimate Denial]
+    end
+
+    AB --> U
+
+    V --> AD[Patient Balance Calculation]
+    AD --> AE[Patient Communication Agent]
+    AE --> AF[Send Statement / Reminder]
+
+    style A fill:#e1f5fe
+    style V fill:#c8e6c9
+    style D fill:#ffcdd2
+    style AC fill:#ffcdd2
+```
+
+---
+
+## Prior Authorization Agent State Machine (Sprint 2)
+
+```mermaid
+stateDiagram-v2
+    [*] --> CheckPARequirement
+    CheckPARequirement --> Done: No PA Required
+    CheckPARequirement --> GatherEvidence: PA Required
+    GatherEvidence --> GenerateJustification
+    GenerateJustification --> CreatePAForm
+    CreatePAForm --> SubmitForApproval
+    SubmitForApproval --> [*]
+    Done --> [*]
+```
+
+See [[EPIC-007-mcp-sdk-refactoring]] T7 for implementation details.
+
+---
+
+## Denial Management Agent State Machine (Sprint 2)
+
+```mermaid
+stateDiagram-v2
+    [*] --> AnalyzeDenial
+    AnalyzeDenial --> AssessAppealViability
+    AssessAppealViability --> ReportNoAppeal: Not Viable
+    AssessAppealViability --> GatherEvidence: Viable
+    GatherEvidence --> DraftAppealLetter
+    DraftAppealLetter --> SubmitForApproval
+    SubmitForApproval --> [*]
+    ReportNoAppeal --> [*]
+```
+
+See [[EPIC-007-mcp-sdk-refactoring]] T8 for implementation details.
+
+---
+
+## Security Pipeline (All Agents)
+
+```mermaid
+flowchart TD
+    Input[Agent Output] --> Block{Dangerous Content?}
+    Block -->|Yes| Blocked[BLOCK]
+    Block -->|No| Warn{Issues?}
+    Warn -->|Yes| Warning[WARN]
+    Warn -->|No| Review{Low Confidence?}
+    Review -->|Yes| HumanReview[REVIEW]
+    Review -->|No| Sanitize{PHI + Non-Clinical?}
+    Sanitize -->|Yes| Cleaned[SANITIZE]
+    Sanitize -->|No| Pass[PASS]
+```
+
+This pipeline is enforced at the framework level via `HIPAAFastMCP.call_tool()` override. See [[ADR-005-mcp-sdk-integration]] for the architectural decision.
+
+---
+
 ## 8. Implementation Roadmap
 
 ### Phase 1 (Months 0-6): Foundation

@@ -679,6 +679,135 @@ All errors returned through the FHIR API use the FHIR OperationOutcome resource 
 
 ---
 
+## Full System Architecture (Sprint 2)
+
+The following diagram shows the complete system architecture as of Sprint 2, including all MCP servers and LangGraph agents:
+
+```mermaid
+graph TB
+    subgraph Frontend
+        Next[Next.js 15 App Router]
+    end
+
+    subgraph Backend
+        FastAPI[FastAPI + HIPAAFastMCP]
+        Gateway[MCP Gateway]
+
+        subgraph MCP_Servers[MCP Servers - 32 Tools]
+            FHIR[FHIR Server - 12 tools]
+            Scribe[Scribe Server - 6 tools]
+            Billing[Billing Server - 8 tools]
+            Schedule[Scheduling Server - 6 tools]
+        end
+
+        subgraph Agents[LangGraph Agents]
+            CS[Clinical Scribe]
+            PA[Prior Auth]
+            DM[Denial Management]
+        end
+    end
+
+    subgraph Data
+        PG[(PostgreSQL + pgvector)]
+        Redis[(Redis)]
+    end
+
+    subgraph AI
+        Claude[Claude via Bedrock]
+        Whisper[Whisper v3]
+    end
+
+    Next --> FastAPI
+    FastAPI --> Gateway
+    Gateway --> FHIR
+    Gateway --> Scribe
+    Gateway --> Billing
+    Gateway --> Schedule
+    FastAPI --> Agents
+    Agents --> Gateway
+    FHIR --> PG
+    Agents --> Claude
+    Scribe --> Whisper
+```
+
+See [[ADR-005-mcp-sdk-integration]] for the HIPAAFastMCP design decision and [[EPIC-007-mcp-sdk-refactoring]] for Sprint 2 implementation scope.
+
+---
+
+## WebSocket Real-Time Event Flow (Sprint 3)
+
+Sprint 3 introduces WebSocket-based real-time agent events. When agents process tasks, events are broadcast to connected frontend clients, enabling a live dashboard experience. See [[EPIC-008-demo-polish]] T3 for implementation details.
+
+```mermaid
+sequenceDiagram
+    participant Browser as Browser (Next.js)
+    participant WS as WebSocket Server
+    participant Redis as Redis Streams
+    participant Agent as LangGraph Agent
+    participant MCP as MCP Gateway
+
+    Browser->>WS: Connect (JWT auth)
+    WS->>WS: Validate JWT, extract tenant_id
+    WS-->>Browser: Connected (tenant-isolated channel)
+
+    Note over Agent,MCP: Agent processes a task
+    Agent->>MCP: call_tool("fhir_read", ...)
+    MCP-->>Agent: FHIR resource
+    Agent->>Redis: Publish: agent.step_completed
+    Redis->>WS: Deliver to tenant channel
+    WS-->>Browser: {type: "agent.step_completed", step: "transcribe", progress: 40%}
+
+    Agent->>Agent: Generate SOAP note
+    Agent->>Redis: Publish: agent.output_ready
+    Redis->>WS: Deliver to tenant channel
+    WS-->>Browser: {type: "agent.output_ready", confidence: 0.87}
+
+    Agent->>Redis: Publish: agent.approval_created
+    Redis->>WS: Deliver to tenant channel
+    WS-->>Browser: {type: "agent.approval_created", approval_id: "abc-123"}
+    Browser->>Browser: Update approval badge count
+
+    Note over Browser,WS: Reconnection on disconnect
+    Browser->>WS: Reconnect (last_event_id)
+    WS->>Redis: Replay events since last_event_id
+    Redis-->>WS: Missed events
+    WS-->>Browser: Replayed events (catch-up)
+```
+
+### WebSocket Event Types
+
+| Event | Trigger | Payload |
+|-------|---------|---------|
+| `agent.started` | Agent task begins execution | `task_id`, `agent_type`, `input_summary` |
+| `agent.step_completed` | Agent completes a pipeline step | `task_id`, `step_name`, `progress_pct` |
+| `agent.output_ready` | Agent generates final output | `task_id`, `confidence`, `output_type` |
+| `agent.approval_created` | Output requires human review | `task_id`, `approval_id`, `agent_type`, `confidence` |
+| `approval.resolved` | Human approves/rejects/modifies | `approval_id`, `decision`, `reviewer_id` |
+
+---
+
+## Sprint 3 Additions: Agent Runner + Patient Intake Workflow
+
+Sprint 3 ([[EPIC-008-demo-polish]]) adds two key backend capabilities:
+
+### Agent Runner API
+
+A unified endpoint (`POST /api/v1/agents/run`) replaces agent-specific trigger routes. The frontend sends `{ agent_type, input_params }` and gets back a `task_id` for status tracking. Agent execution is async, with progress broadcast via WebSocket.
+
+### Patient Intake Workflow
+
+An end-to-end orchestrated workflow (`POST /api/v1/workflows/patient-intake`) that chains:
+
+1. **Patient lookup** (FHIR MCP `fhir_read`)
+2. **Eligibility check** (Billing MCP `billing_check_eligibility`)
+3. **Appointment confirm** (Scheduling MCP `scheduling_book`)
+4. **Encounter create** (FHIR MCP `fhir_create`)
+5. **Clinical Scribe trigger** (Agent Runner)
+
+Each step emits WebSocket events for real-time frontend updates. See [[Clinical-Workflows-Overview]] for the clinical workflow context.
+
+---
+
 ## References
 
 - [[HEALTHCARE_OS_MASTERPLAN]] -- Strategic vision and module definitions
