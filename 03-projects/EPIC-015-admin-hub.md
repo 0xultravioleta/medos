@@ -85,7 +85,7 @@ tags:
 | S3F-T24 | Security & Compliance (5 tabs + HIPAA dashboard) | done |
 | S3F-T25 | Data Management (5 tabs) | done |
 | S3F-T26 | E2E test update for admin sections | done |
-| S3F-T27 | E2E video recording with all admin sections | in-progress |
+| S3F-T27 | E2E video recording with all admin sections | done |
 
 ---
 
@@ -99,7 +99,7 @@ tags:
 - [x] MedOS design system applied consistently
 - [x] TypeScript compiles with 0 errors
 - [x] E2E test covers all admin routes (ACT 13, 14 Acts total)
-- [ ] E2E video demonstrates full admin hub (recording in progress)
+- [x] E2E video demonstrates full admin hub (12MB MP4 at frontend/demos/202603010052.mp4)
 
 ---
 
