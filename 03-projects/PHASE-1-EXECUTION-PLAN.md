@@ -589,7 +589,7 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 **Sprint Goal:** Build frontend pages for Device Management, Context Freshness, and System Health as Settings sub-pages. Fix E2E test bug. Update E2E demo to cover new pages.
 
-**Status:** in-progress
+**Status:** done
 
 **References:** [[EPIC-014-admin-system-monitoring]]
 
@@ -597,18 +597,20 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 |----|------|-------|------|------|---------------------|--------|
 | S3F-T01 | Commit Sprint 2.5 backend files (12 files) | A | 0.5h | -- | All files committed, 522 tests verified | done |
 | S3F-T02 | Fix E2E bug: scope claims analytics selector to main content | A | 0.5h | -- | Selector uses page.locator('main') to avoid sidebar match | done |
-| S3F-T03 | Device Management page at /settings/devices | A | 4h | S3F-T01 | 3 tabs (Devices, Readings, Alerts), mock data, 0 TS errors | in-progress |
-| S3F-T04 | Context Freshness Dashboard at /settings/context | A | 5h | S3F-T01 | 4 tabs (Patient, System, Dependency Graph, Rehydration Log), 0 TS errors | in-progress |
-| S3F-T05 | System Health Dashboard at /settings/system | A | 5h | S3F-T01 | 4 tabs (Overview, MCP Inventory, Agent Performance, Cache), 0 TS errors | in-progress |
-| S3F-T06 | Update Settings landing page with 3 new link cards | A | 1h | S3F-T03, S3F-T04, S3F-T05 | Device/Context/System cards visible on /settings | pending |
-| S3F-T07 | Update E2E demo (ACT 11) to cover new pages | A | 2h | S3F-T06 | E2E visits all 3 pages and all tabs | pending |
+| S3F-T03 | Device Management page at /settings/devices | A | 4h | S3F-T01 | 3 tabs (Devices, Readings, Alerts), mock data, 0 TS errors | done |
+| S3F-T04 | Context Freshness Dashboard at /settings/context | A | 5h | S3F-T01 | 4 tabs (Patient, System, Dependency Graph, Rehydration Log), 0 TS errors | done |
+| S3F-T05 | System Health Dashboard at /settings/system | A | 5h | S3F-T01 | 4 tabs (Overview, MCP Inventory, Agent Performance, Cache), 0 TS errors | done |
+| S3F-T06 | Update Settings landing page with 3 new link cards | A | 1h | S3F-T03, S3F-T04, S3F-T05 | Device/Context/System cards visible on /settings | done |
+| S3F-T07 | Update E2E demo (ACT 11) to cover new pages | A | 2h | S3F-T06 | E2E visits all 3 pages and all tabs | done |
 | S3F-T08 | Vault docs: EPIC-014, masterplan, execution plan | B | 1h | -- | EPIC-014 created, masterplan updated, Sprint 2.5/3 in exec plan | done |
-| S3F-T09 | Verify + deploy: build, E2E, push to master | A | 1h | ALL | npm run build succeeds, E2E passes, Vercel deploys | pending |
+| S3F-T09 | Verify + deploy: build, E2E, push to master | A | 1h | ALL | npm run build succeeds, E2E passes, Vercel deploys | done |
+| S3F-T10 | Project Tracker board at /project (4 views, 140 tasks) | A | 3h | S3F-T09 | Board, List, Timeline, Stats views with all 140 tasks | done |
 
 ### Sprint 3 (Frontend) Deliverables
 - 3 new Settings sub-pages: `/settings/devices`, `/settings/context`, `/settings/system`
+- Project Tracker board at `/project` (Board, List, Timeline, Stats views with all 141 tasks)
 - E2E bug fixed (claims analytics selector)
-- E2E demo updated to cover 25+ routes
+- E2E demo updated to cover 26 routes
 - EPIC-014 created, vault docs updated
 - All committed and deployed to Vercel
 
@@ -696,8 +698,8 @@ W13    | Prod deploy, demo env, backups     | Pilot onboarding, training
 | S5 | 12 | 6 | 5 | 1 | ~54h |
 | S6 | 9 | 4 | 4 | 1 | ~33h |
 | S2.5 | 8 | 4 | 4 | 0 | ~28h |
-| S3F | 9 | 7 | 1 | 1 | ~20h |
-| **Total** | **140** | **77** | **53** | **10** | **~510h** |
+| S3F | 10 | 8 | 1 | 1 | ~23h |
+| **Total** | **141** | **78** | **53** | **10** | **~513h** |
 
 At 8h/day per person, 10 days/sprint = 160h/sprint for the team. Each sprint uses 30-80% of available capacity, leaving buffer for unexpected issues, debugging, meetings, and pilot relationship management.
 

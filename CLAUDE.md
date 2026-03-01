@@ -241,6 +241,22 @@ When working in the MedOS Obsidian vault, proactively maintain architectural coh
 
 ---
 
+## DOG-FOODING PROTOCOL
+
+MedOS must use its own tools internally -- every feature we build should be demonstrated inside the platform itself.
+
+- **Admin dashboard** should consume MCP tools for live data (not hardcoded mock data in production)
+- **Agent monitoring** should use the platform's own observability stack (Langfuse, health_dashboard)
+- **Project tracker** at `/project` should track MedOS's own development (141 tasks, all sprints)
+- **Context freshness** should monitor its own contexts -- the freshness system monitors itself
+- **Device integration** dashboard should display real data when connected to test devices
+- **Billing pipeline** should process test claims through the full X12 pipeline end-to-end
+- **Every new feature** gets a corresponding demo scenario in the E2E suite proving it works inside the platform
+
+This is not optional. If we build a feature and do not use it ourselves, we will not catch real usability issues before pilot practices do. The platform is both the product and its own best test environment.
+
+---
+
 ## QUICK REFERENCE
 
 ```
