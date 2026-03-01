@@ -107,12 +107,14 @@ INTEGRATION LAYER
 - FHIR-native data model -- NOT "translatable to FHIR" but natively FHIR
 - Consent management as machine-executable policy (evaluated at query time)
 - PostgreSQL 17 + JSONB + pgvector (one DB for relational + FHIR + vectors)
+- **Context Rehydration Engine** (see [[ADR-006-patient-context-rehydration]]): Event-driven context refresh when patient data changes — ensures AI agents always operate on fresh data
 
 ### Module B: Provider Workflow Engine
 - **Ambient AI Documentation**: Audio capture -> speech-to-text -> clinical NLU -> note generation -> provider review
 - Proven results: JAMA study showed burnout dropped from 51.9% to 38.8%, saves 30 min/day
 - Smart scheduling with ML-predicted no-shows and overbooking optimization
 - CDS Hooks integration for clinical decision support
+- **Context Freshness Monitor**: Ensures all AI agent contexts stay fresh — staleness detection (score < 0.75 triggers rehydration), exponential time decay, cosine similarity validation against golden source (EMR)
 
 ### Module C: Revenue Cycle (WHERE THE MONEY IS)
 - AI coding engine: ICD-10 + CPT from clinical notes (10-20% error rate currently)
@@ -137,8 +139,21 @@ INTEGRATION LAYER
 ### Module F: Patient Engagement
 - Multi-channel: web portal, mobile app, SMS, email, voice
 - AI chat agent (triage, scheduling, billing Q&A -- NOT diagnosis)
-- Remote patient monitoring (BLE devices, Apple Health, Google Health Connect)
 - Telehealth integration (Twilio Video)
+
+#### Wearable & IoT Device Integration (see [[ADR-007-wearable-iot-integration]])
+- **Device Bridge**: Unified ingestion layer for consumer health devices
+  - Apple Watch (HealthKit API): HR, HRV, SpO2, ECG, fall detection, activity
+  - Oura Ring (Oura Cloud API): HR, HRV, sleep stages, temperature, readiness
+  - Dexcom CGM (Dexcom API): Continuous glucose monitoring, trend arrows
+  - Google Health Connect: Aggregated Android device data
+  - Withings (Health Mate API): Blood pressure, weight, sleep
+  - Fitbit (Web API): Activity, sleep, HR
+- **FHIR Observation mapping**: Every device reading stored as FHIR R4 Observation with LOINC codes
+- **Device MCP Server**: 8 tools for agent access (register, list, ingest, query, alerts, deregister)
+- **Patient consent**: Explicit opt-in per device, granular data sharing, right to disconnect
+- **Alert thresholds**: Configurable per-patient (HR >120/<45, SpO2 <92, glucose >180/<70)
+- **Revenue impact**: RPM (CPT 99453-99458) generates $100-150/patient/month
 
 ### Module G: Compliance & Security
 - SMART on FHIR OAuth2
@@ -152,6 +167,31 @@ INTEGRATION LAYER
 - HL7v2 adapter (95% of hospitals still use HL7v2)
 - Third-party app marketplace (SMART on FHIR)
 - Developer portal + SDK (Python, JavaScript, C#)
+
+#### A2A Protocol (Inter-Agent Communication)
+- **Agent-to-Agent (A2A) Protocol** adopted for inter-agent communication (see [[ADR-008-a2a-agent-communication]])
+- **MCP = tool access** (agent -> FHIR data, billing, scheduling tools), **A2A = agent communication** (agent <-> agent coordination)
+- Every MedOS agent exposes an **A2A Agent Card** at a dedicated endpoint, enabling capability discovery by internal and external agents
+- **A2A Gateway** handles auth, PHI screening, tenant isolation, and audit logging for all inter-agent messages
+- **External agent marketplace**: Third-party healthcare AI agents (EHR vendors, payers, health tech) connect to MedOS via A2A Agent Cards
+- **HIPAA-compliant PHI screening**: All A2A messages pass through minimum necessary enforcement -- agents only receive data matching their PHI access level
+- **Task lifecycle**: Inter-agent requests are A2A Tasks with states (submitted, working, input-required, completed, failed, canceled) providing full auditability
+- A2A complements the existing event bus (Redis Streams): event bus for fire-and-forget notifications, A2A for workflows requiring acknowledgment, status tracking, or multi-turn interaction
+
+#### Device Bridge Architecture
+- **Inbound adapters**: One adapter per device API (Apple HealthKit, Oura Cloud, Dexcom, Google Health Connect)
+- **Normalization layer**: Raw device data → FHIR R4 Observation with LOINC coding
+- **Event publishing**: Every device reading → event bus → context rehydration triggers
+- **Webhook receivers**: For push-based APIs (Dexcom real-time glucose, Withings webhooks)
+- **Batch sync**: For pull-based APIs (Apple HealthKit via mobile app sync)
+
+#### Patient Context Rehydration (see [[ADR-006-patient-context-rehydration]])
+- **Event-driven refresh**: When ANY patient data changes, publish event → downstream contexts refresh
+- **Context Dependency Graph**: Maps which AI contexts depend on which data sources
+- **Tiered cache**: Redis (hot, TTL 15min) → Vector embeddings (warm) → PostgreSQL JSONB (cold/golden source)
+- **Freshness monitoring**: Scores 0.0 (stale) to 1.0 (fresh), threshold 0.75, cosine similarity check
+- **Auto-refresh policies**: Immediate (active encounter), Soon (background), Batch (analytics), Lazy (dormant)
+- **Golden source pattern**: EMR is ALWAYS truth — everything in Redis/vector is disposable cache
 
 ---
 
@@ -616,39 +656,52 @@ This confirms Claude as our production AI backend. The architecture decision in 
 
 ## CURRENT PROGRESS
 
-> Last updated: 2026-02-28 (Day 2 of development)
+> Last updated: 2026-02-28 (Day 3 of development)
 
 ### What's Built
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| **Knowledge Base** | Complete | 44 documents, 121,860 words across all healthcare domains |
-| **Backend (FastAPI)** | Foundation complete | 28 Python modules, 56 tests passing (99% coverage), JWT auth, FHIR CRUD, audit logging, PHI filter |
-| **Frontend (Next.js 15)** | Demo complete | 11 routes including login, dashboard, patients, appointments, AI notes, claims, analytics, settings |
-| **AI Scribe (Demo)** | Complete | Interactive 3-stage simulation: recording with waveform -> AI processing -> SOAP note with ICD-10/CPT codes |
-| **Backend API** | Mock endpoints ready | 7 REST endpoints at `/api/v1/*` with Pydantic response models |
+| **Knowledge Base** | Complete | 50+ documents, 121K+ words across all healthcare domains |
+| **Backend (FastAPI)** | Sprint 1+ complete | 50+ Python modules, 467+ tests passing, JWT auth, FHIR CRUD, audit logging, PHI filter |
+| **Frontend (Next.js 15)** | Full demo | 22 routes: login, dashboard, patients, appointments, AI notes, claims, approvals, analytics, pilot, docs (5 sub-pages), settings (3 sub-pages) |
+| **AI Scribe (Demo)** | Complete | Interactive 3-stage simulation + MCP tool-based pipeline with confidence scoring |
+| **MCP Layer** | Complete | 4 MCP servers: FHIR (12 tools), Scribe (6 tools), Billing (13 tools), Scheduling (6 tools) = 37 tools |
+| **LangGraph Agents** | 3 implemented | Clinical Scribe, Prior Authorization, Denial Management -- all with bounded autonomy |
+| **Security Pipeline** | Complete | MCP Gateway with auth, PHI policies, rate limiting, credential injection, safety layer, audit trail |
+| **A2A Protocol** | Complete | Full A2A adoption per [[ADR-008-a2a-agent-communication]]: Agent Cards, A2A Gateway, inter-agent tasks, PHI screening, external marketplace |
+| **Approval Workflow** | Complete | Human-in-the-loop review for high-stakes agent actions (claims, PA, appeals) |
+| **E2E Demo** | Complete | 12-ACT Playwright test covering all 22 pages, auto-generates MP4 video |
 | **CI/CD** | Configured | GitHub Actions with lint, test, security scan, Docker build |
 | **Deployment** | Live | Frontend on Vercel (https://medos-platform.vercel.app), backend Docker-ready |
-| **Architecture Docs** | Complete | 4 ADRs, Terraform module plan (9 modules), AI agent architecture (5 agents), MCP integration plan |
+| **Architecture Docs** | Complete | 8 ADRs, Terraform module plan (9 modules), AI agent architecture (5 agents), MCP integration plan, A2A protocol reference |
+| **Device Integration** | Complete | Device MCP Server (8 tools), wearable support (Oura Ring, Apple Watch, Dexcom), ADR-007 |
+| **Context Rehydration** | Complete | Event-driven context refresh (17 change types, 13 context types), freshness monitoring (exponential decay scoring), tiered cache (hot/warm/cold), ADR-006 |
+| **Platform Admin (Phase 1)** | In progress | Device Management, Context Freshness Dashboard, System Health — as Settings sub-pages ([[EPIC-014-admin-system-monitoring]]) |
 
 ### Sprint Status
 
 | Sprint | Phase | Status |
 |--------|-------|--------|
 | **Day 0** | Research & Architecture | Complete -- 121K+ words of research |
-| **Day 1-2** | Platform scaffold + Frontend demo | Complete -- full demo with 11 routes |
+| **Day 1-2** | Platform scaffold + Frontend demo | Complete -- full demo with 22 routes |
+| **Sprint 1** | Agentic API + MCP Layer | Complete -- 4 MCP servers, 37 tools, 3 agents, security pipeline |
+| **Sprint 2** | Billing + Scheduling + Agents | Complete -- Billing (13 tools), Scheduling (6 tools), Prior Auth agent, Denial Mgmt agent |
+| **Sprint 2.5** | Device Integration + Context Rehydration | Complete -- Device MCP (8 tools), Context Engine (17 events, 13 contexts), Freshness Monitor, Context MCP (4 tools), ADR-006/007/008, 522 tests |
+| **Sprint 3** | Frontend Pages + Admin Phase 1 | In progress -- Device Management, Context Freshness Dashboard, System Health pages under Settings |
 | **Sprint 0** | AWS Infrastructure (Terraform) | Planned -- [[terraform-module-plan]] ready, estimated $402/mo dev |
-| **Sprint 1** | Core Data Layer (FHIR engine) | Planned |
-| **Sprint 2** | AI Clinical Documentation (real) | Planned -- [[agent-architecture]] and [[bedrock-claude-setup]] ready |
 | **Sprint 3-4** | Revenue Cycle MVP | Planned |
 | **Sprint 5-6** | Pilot Readiness | Planned |
 
 ### Key Metrics
 
-- **11** frontend routes, 0 TypeScript errors
-- **56** backend tests, all passing
-- **~7,000+** lines of code (backend + frontend)
-- **44** knowledge base documents (121K+ words)
+- **25+** frontend routes (22 existing + 3 new Settings sub-pages), 0 TypeScript errors
+- **522+** backend tests, all passing, ruff clean
+- **44** MCP tools across 6 servers: FHIR (12), Scribe (6), Billing (8), Scheduling (6), Device (8), Context (4)
+- **3** LangGraph agents (Clinical Scribe, Prior Auth, Denial Management)
+- **8** Architecture Decision Records (ADR-001 through ADR-008)
+- **14** EPICs (EPIC-001 through EPIC-014)
+- **65+** knowledge base documents (121K+ words)
 - **$402/mo** estimated dev environment cost (AWS)
 - **$3,508/mo** estimated production cost (AWS)
 - **5** AI agents fully specified with bounded autonomy framework
@@ -668,6 +721,13 @@ This confirms Claude as our production AI backend. The architecture decision in 
 - [[bedrock-claude-setup]] -- AWS Bedrock + Claude HIPAA setup
 - [[mcp-integration-plan]] -- MCP integration strategy
 - [[MOC-Agent-Architecture]] -- Agent documentation index
+- [[ADR-006-patient-context-rehydration]] -- System-wide context rehydration architecture
+- [[ADR-007-wearable-iot-integration]] -- Wearable/IoT device integration
+- [[EPIC-008-device-integration]] -- Wearable & IoT device integration epic
+- [[EPIC-009-context-rehydration]] -- Context rehydration & freshness monitoring epic
+- [[ADR-008-a2a-agent-communication]] -- A2A protocol adoption for inter-agent communication
+- [[a2a-protocol-reference]] -- A2A protocol reference and MedOS integration guide
+- [[EPIC-014-admin-system-monitoring]] -- Admin Phase 1: Device Management, Context Freshness, System Health pages
 
 ---
 

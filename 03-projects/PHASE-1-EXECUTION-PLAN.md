@@ -548,6 +548,72 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 ---
 
+## Sprint 2.5: Device Integration + Context Rehydration
+
+**Sprint Goal:** Add wearable/IoT device support and system-wide context rehydration to ensure AI agents always operate on fresh data.
+
+**Status:** done
+
+**References:** [[EPIC-012-device-integration]], [[EPIC-013-context-rehydration]], [[ADR-006-patient-context-rehydration]], [[ADR-007-wearable-iot-integration]], [[ADR-008-a2a-agent-communication]]
+
+**Sprint 2.5 Actual Delivery:**
+- 522 tests passing, ruff clean
+- Device MCP Server (8 tools): register, list, ingest, batch ingest, get readings, summaries, alert checks, deregister
+- Context Rehydration Engine: 17 change types, 13 context types, tiered cache (hot/warm/cold), dependency graph, urgency-based TTL
+- Context Freshness Monitor: exponential time decay scoring (half-life 30min), source recency, change incorporation signals
+- Context MCP Server (4 tools): freshness check, force refresh, dependency graph query, staleness report
+- ADR-006 (Context Rehydration), ADR-007 (Wearable IoT), ADR-008 (A2A Protocol)
+- A2A Protocol reference guide
+
+| ID | Task | Owner | Est. | Deps | Acceptance Criteria | Status |
+|----|------|-------|------|------|---------------------|--------|
+| S2.5-T01 | Device MCP Server: 8 tools for wearable device integration (Oura Ring, Apple Watch, Dexcom CGM) | A | 6h | S2-T14 | 8 tools registered, mock data for 3 devices, 12 tests passing | done |
+| S2.5-T02 | Context Rehydration Engine: event-driven refresh with 17 change types, 13 context types, dependency graph | A | 6h | S1-T08 | ContextChangeEvent triggers selective refresh, 15 tests passing | done |
+| S2.5-T03 | Context Freshness Monitor: scoring (0.0-1.0), staleness detection, system-wide metrics | A | 4h | S2.5-T02 | FreshnessScorer with 3 weighted signals, StalenessDetector, 12 tests passing | done |
+| S2.5-T04 | Context MCP Server: 4 tools for freshness/refresh/deps/staleness | A | 3h | S2.5-T02, S2.5-T03 | 4 tools registered via @hipaa_tool, total 44 MCP tools | done |
+| S2.5-T05 | ADR-006: Patient Context Rehydration architecture decision | B | 2h | -- | ADR documented with context, decision, consequences | done |
+| S2.5-T06 | ADR-007: Wearable/IoT Integration architecture decision | B | 2h | -- | ADR documented with device bridge architecture | done |
+| S2.5-T07 | ADR-008: A2A Agent Communication protocol adoption | B | 3h | -- | ADR with MCP vs A2A comparison, gateway design | done |
+| S2.5-T08 | A2A Protocol reference guide and integration documentation | B | 2h | S2.5-T07 | Complete reference at 09-handoffs/a2a-protocol-reference.md | done |
+
+### Sprint 2.5 Definition of Done
+- 522+ tests passing, ruff clean
+- Device MCP Server with 8 tools and mock data for 3 device types
+- Context Rehydration with 17 change types triggering refresh of 13 context types
+- Freshness scoring with exponential decay, threshold 0.75
+- 3 ADRs (006, 007, 008) documented and approved
+
+---
+
+## Sprint 3 (Frontend): Admin Phase 1
+
+**Sprint Goal:** Build frontend pages for Device Management, Context Freshness, and System Health as Settings sub-pages. Fix E2E test bug. Update E2E demo to cover new pages.
+
+**Status:** in-progress
+
+**References:** [[EPIC-014-admin-system-monitoring]]
+
+| ID | Task | Owner | Est. | Deps | Acceptance Criteria | Status |
+|----|------|-------|------|------|---------------------|--------|
+| S3F-T01 | Commit Sprint 2.5 backend files (12 files) | A | 0.5h | -- | All files committed, 522 tests verified | done |
+| S3F-T02 | Fix E2E bug: scope claims analytics selector to main content | A | 0.5h | -- | Selector uses page.locator('main') to avoid sidebar match | done |
+| S3F-T03 | Device Management page at /settings/devices | A | 4h | S3F-T01 | 3 tabs (Devices, Readings, Alerts), mock data, 0 TS errors | in-progress |
+| S3F-T04 | Context Freshness Dashboard at /settings/context | A | 5h | S3F-T01 | 4 tabs (Patient, System, Dependency Graph, Rehydration Log), 0 TS errors | in-progress |
+| S3F-T05 | System Health Dashboard at /settings/system | A | 5h | S3F-T01 | 4 tabs (Overview, MCP Inventory, Agent Performance, Cache), 0 TS errors | in-progress |
+| S3F-T06 | Update Settings landing page with 3 new link cards | A | 1h | S3F-T03, S3F-T04, S3F-T05 | Device/Context/System cards visible on /settings | pending |
+| S3F-T07 | Update E2E demo (ACT 11) to cover new pages | A | 2h | S3F-T06 | E2E visits all 3 pages and all tabs | pending |
+| S3F-T08 | Vault docs: EPIC-014, masterplan, execution plan | B | 1h | -- | EPIC-014 created, masterplan updated, Sprint 2.5/3 in exec plan | done |
+| S3F-T09 | Verify + deploy: build, E2E, push to master | A | 1h | ALL | npm run build succeeds, E2E passes, Vercel deploys | pending |
+
+### Sprint 3 (Frontend) Deliverables
+- 3 new Settings sub-pages: `/settings/devices`, `/settings/context`, `/settings/system`
+- E2E bug fixed (claims analytics selector)
+- E2E demo updated to cover 25+ routes
+- EPIC-014 created, vault docs updated
+- All committed and deployed to Vercel
+
+---
+
 ## Parallel Track Visualization
 
 ```
@@ -629,7 +695,9 @@ W13    | Prod deploy, demo env, backups     | Pilot onboarding, training
 | S4 | 18 | 10 | 7 | 1 | ~76h |
 | S5 | 12 | 6 | 5 | 1 | ~54h |
 | S6 | 9 | 4 | 4 | 1 | ~33h |
-| **Total** | **123** | **66** | **49** | **8** | **~462h** |
+| S2.5 | 8 | 4 | 4 | 0 | ~28h |
+| S3F | 9 | 7 | 1 | 1 | ~20h |
+| **Total** | **140** | **77** | **53** | **10** | **~510h** |
 
 At 8h/day per person, 10 days/sprint = 160h/sprint for the team. Each sprint uses 30-80% of available capacity, leaving buffer for unexpected issues, debugging, meetings, and pilot relationship management.
 
@@ -648,6 +716,11 @@ At 8h/day per person, 10 days/sprint = 160h/sprint for the team. Each sprint use
 | [[EPIC-007-mcp-sdk-refactoring]] | S2 | S3 (agent runner consumes MCP tools) |
 | [[EPIC-008-demo-polish]] | S3 | S2 (builds on 32 MCP tools + 3 agents) |
 | [[EPIC-009-revenue-cycle-completion]] | S4 | S3 (builds on eligibility + coding + claims base) |
+| [[EPIC-010-security-pilot-readiness]] | S5 | S0 (security infra), S6 (prod deploy) |
+| [[EPIC-011-launch-go-live]] | S6 | S5 (pilot prep) |
+| [[EPIC-012-device-integration]] | S2.5 | S3F (frontend page) |
+| [[EPIC-013-context-rehydration]] | S2.5 | S3F (frontend dashboard) |
+| [[EPIC-014-admin-system-monitoring]] | S3F | S2.5 (backend modules) |
 
 ---
 
