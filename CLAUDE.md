@@ -41,15 +41,15 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 - Tambien actualizar el frontmatter `status` de los EPICs cuando cambien
 
 ### Sprints
-| Sprint | Semanas | Foco |
-|--------|---------|------|
-| S0 | W1-2 | AWS, CI/CD, Auth, DB, FastAPI, FHIR Patient CRUD |
-| S1 | W3-4 | FHIR resources, patient matching, event bus |
-| S2 | W5-6 | Whisper, Claude NLP, SOAP notes, provider UI |
-| S3 | W7-8 | Eligibility, AI coding, claims (X12 837P) |
-| S4 | W9-10 | Prior auth (X12 278), denials, analytics |
-| S5 | W11-12 | Security hardening, pen test, onboarding |
-| S6 | W13 | Prod deploy, pilot onboarding, go-live |
+| Sprint | Semanas | Foco | Status |
+|--------|---------|------|--------|
+| S0 | W1-2 | AWS, CI/CD, Auth, DB, FastAPI, FHIR Patient CRUD | done |
+| S1 | W3-4 | FHIR resources, patient matching, event bus | done |
+| S2 | W5-6 | MCP SDK refactoring, 32 tools, 3 agents, HIPAAFastMCP | done |
+| S3 | W7-8 | Demo polish: Approvals UI, WebSocket, agent runner, intake workflow | done |
+| S4 | W9-10 | Revenue cycle completion: X12 837P, scrubbing, 835 parser, PA, denials, analytics | **in-progress** |
+| S5 | W11-12 | Security hardening, pen test, onboarding | pending |
+| S6 | W13 | Prod deploy, pilot onboarding, go-live | pending |
 
 ---
 
@@ -80,7 +80,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 |---------|-----------|
 | `03-projects/PRE-DEV-CHECKLIST.md` | Todo ANTES de Sprint 0 |
 | `03-projects/PHASE-1-EXECUTION-PLAN.md` | 117 tasks, dia-a-dia |
-| `03-projects/EPIC-001` a `EPIC-008` | Detalle por area (001-006 Foundation, 007 MCP SDK, 008 Demo Polish) |
+| `03-projects/EPIC-001` a `EPIC-009` | Detalle por area (001-006 Foundation, 007 MCP SDK, 008 Demo Polish, 009 Revenue Cycle Completion) |
 
 ### Arquitectura (como hacerlo)
 | Archivo | Decision |
@@ -116,6 +116,11 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | Archivo | Proposito |
 |---------|-----------|
 | `03-projects/EPIC-008-*` | Demo polish: Approvals UI, WebSocket, agent runner, intake workflow |
+
+### Sprint 4 Files
+| Archivo | Proposito |
+|---------|-----------|
+| `03-projects/EPIC-009-*` | Revenue cycle completion: X12 837P, scrubbing, 835 parser, payment posting, claims MCP tools |
 
 ### Engineering (guias de implementacion)
 | Archivo | Guia |
