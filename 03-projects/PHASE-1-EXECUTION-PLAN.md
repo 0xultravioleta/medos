@@ -272,20 +272,20 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 | ID | Task | Owner | Est. | Deps | Acceptance Criteria | Status |
 |----|------|-------|------|------|---------------------|--------|
-| S2-T01 | Deploy Whisper v3 on ECS GPU task (g5.xlarge): Dockerfile, model download, health check, auto-scaling to zero when idle | A | 6h | S0-T15 | Whisper endpoint accepts audio file, returns transcript in < 2x real-time | pending |
-| S2-T02 | Build audio upload API: accept WAV/MP3/M4A (up to 30 min), store in S3 per-tenant prefix, return job ID | A | 3h | S0-T12, S0-T25 | Audio uploaded, stored encrypted in S3, job ID returned for polling | pending |
-| S2-T03 | Build transcription pipeline: EventBridge trigger on audio upload -> Whisper task -> store transcript -> emit transcript-ready event | A | 4h | S2-T01, S2-T02, S1-T08 | Audio upload triggers transcription, transcript stored, event emitted | pending |
-| S2-T04 | Build Claude clinical NLP pipeline: transcript -> structured extraction (chief complaint, HPI, ROS, exam findings, assessment, plan) using Claude API with HIPAA BAA | A | 6h | S2-T03 | Claude extracts structured clinical data from transcript with > 90% accuracy on test cases | pending |
-| S2-T05 | Build SOAP note generator: structured extraction -> formatted SOAP note (Subjective, Objective, Assessment, Plan) with FHIR DocumentReference | A | 4h | S2-T04 | SOAP note generated, stored as FHIR DocumentReference linked to Encounter | pending |
-| S2-T06 | Implement confidence scoring for AI extractions: Claude returns confidence per section, flag low-confidence sections for human review | A | 3h | S2-T04 | Each section has confidence score, sections < 0.85 highlighted in UI | pending |
-| S2-T07 | Implement LangGraph agent for clinical documentation: state machine with audio -> transcript -> extraction -> note -> review states | A | 4h | S2-T04, S2-T05 | Agent orchestrates full pipeline, handles failures, retries, state visible | pending |
-| S2-T08 | Build Next.js provider workspace: encounter list, start new encounter, recording controls (start/stop/pause) | B | 6h | S2-T02 | Provider can start encounter, record audio, see encounter list | pending |
-| S2-T09 | Build note review UI: display generated SOAP note, inline editing per section, accept/reject/modify controls, sign-off button | B | 6h | S2-T05 | Provider sees generated note, edits inline, signs off, note saved as final | pending |
-| S2-T10 | Build real-time transcription status: WebSocket connection showing transcription progress, section extraction progress | B | 3h | S2-T03 | Provider sees live progress: "Transcribing... Extracting... Generating note..." | pending |
-| S2-T11 | Implement Langfuse integration for LLM observability: trace every Claude call, log tokens/latency/cost per encounter | A | 2h | S2-T04 | Every Claude call traced in Langfuse dashboard with cost attribution | pending |
-| S2-T12 | Implement AI-generated ICD-10 + CPT suggestions from clinical note: Claude analyzes SOAP note, suggests codes with confidence scores | B | 4h | S2-T05 | Code suggestions displayed alongside note, provider can accept/modify/reject | pending |
-| S2-T13 | Build encounter summary dashboard: list of today's encounters, AI note status (pending/review/signed), time saved metric | B | 3h | S2-T08 | Provider sees daily encounter summary with status and estimated time savings | pending |
-| S2-T14 | Sprint 2 end-to-end test: record sample encounter audio, run through full pipeline, review and sign note, verify FHIR resources created | BOTH | 4h | ALL | Full demo works: audio -> note -> review -> signed -> stored in FHIR | pending |
+| S2-T01 | Deploy Whisper v3 on ECS GPU task (g5.xlarge): Dockerfile, model download, health check, auto-scaling to zero when idle | A | 6h | S0-T15 | Whisper endpoint accepts audio file, returns transcript in < 2x real-time | done |
+| S2-T02 | Build audio upload API: accept WAV/MP3/M4A (up to 30 min), store in S3 per-tenant prefix, return job ID | A | 3h | S0-T12, S0-T25 | Audio uploaded, stored encrypted in S3, job ID returned for polling | done |
+| S2-T03 | Build transcription pipeline: EventBridge trigger on audio upload -> Whisper task -> store transcript -> emit transcript-ready event | A | 4h | S2-T01, S2-T02, S1-T08 | Audio upload triggers transcription, transcript stored, event emitted | done |
+| S2-T04 | Build Claude clinical NLP pipeline: transcript -> structured extraction (chief complaint, HPI, ROS, exam findings, assessment, plan) using Claude API with HIPAA BAA | A | 6h | S2-T03 | Claude extracts structured clinical data from transcript with > 90% accuracy on test cases | done |
+| S2-T05 | Build SOAP note generator: structured extraction -> formatted SOAP note (Subjective, Objective, Assessment, Plan) with FHIR DocumentReference | A | 4h | S2-T04 | SOAP note generated, stored as FHIR DocumentReference linked to Encounter | done |
+| S2-T06 | Implement confidence scoring for AI extractions: Claude returns confidence per section, flag low-confidence sections for human review | A | 3h | S2-T04 | Each section has confidence score, sections < 0.85 highlighted in UI | done |
+| S2-T07 | Implement LangGraph agent for clinical documentation: state machine with audio -> transcript -> extraction -> note -> review states | A | 4h | S2-T04, S2-T05 | Agent orchestrates full pipeline, handles failures, retries, state visible | done |
+| S2-T08 | Build Next.js provider workspace: encounter list, start new encounter, recording controls (start/stop/pause) | B | 6h | S2-T02 | Provider can start encounter, record audio, see encounter list | done |
+| S2-T09 | Build note review UI: display generated SOAP note, inline editing per section, accept/reject/modify controls, sign-off button | B | 6h | S2-T05 | Provider sees generated note, edits inline, signs off, note saved as final | done |
+| S2-T10 | Build real-time transcription status: WebSocket connection showing transcription progress, section extraction progress | B | 3h | S2-T03 | Provider sees live progress: "Transcribing... Extracting... Generating note..." | done |
+| S2-T11 | Implement Langfuse integration for LLM observability: trace every Claude call, log tokens/latency/cost per encounter | A | 2h | S2-T04 | Every Claude call traced in Langfuse dashboard with cost attribution | done |
+| S2-T12 | Implement AI-generated ICD-10 + CPT suggestions from clinical note: Claude analyzes SOAP note, suggests codes with confidence scores | B | 4h | S2-T05 | Code suggestions displayed alongside note, provider can accept/modify/reject | done |
+| S2-T13 | Build encounter summary dashboard: list of today's encounters, AI note status (pending/review/signed), time saved metric | B | 3h | S2-T08 | Provider sees daily encounter summary with status and estimated time savings | done |
+| S2-T14 | Sprint 2 end-to-end test: record sample encounter audio, run through full pipeline, review and sign note, verify FHIR resources created | BOTH | 4h | ALL | Full demo works: audio -> note -> review -> signed -> stored in FHIR | done |
 
 ### Sprint 2 Deliverables
 - Working Whisper transcription endpoint on ECS GPU
@@ -315,24 +315,36 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 **Sprint Dates:** 2026-04-12 to 2026-04-25 (10 working days)
 
+**Status:** done
+
 **References:** [[EPIC-005-revenue-cycle-mvp]], [[EPIC-008-demo-polish]], [[Revenue-Cycle-Deep-Dive]], [[X12-EDI-Deep-Dive]]
 
 **Note:** Sprint 3 now includes both the Revenue Cycle v1 tasks and the Demo Polish epic ([[EPIC-008-demo-polish]]). EPIC-008 covers: Approvals UI, frontend-backend API integration, WebSocket real-time events, agent runner API, patient intake workflow, enhanced seed data, and vault enrichment.
 
+**Sprint 3 Actual Delivery:**
+- 200+ tests passing, ruff clean
+- Approvals UI fully functional with real API data
+- WebSocket real-time agent events streaming
+- Agent runner API for all 3 agents
+- Patient intake workflow end-to-end
+- Enhanced demo seed data with 5+ patients and multiple scenarios
+- Dashboard agent stats widget with sparklines
+- All existing frontend pages connected to real APIs (no mock data)
+
 | ID | Task | Owner | Est. | Deps | Acceptance Criteria | Status |
 |----|------|-------|------|------|---------------------|--------|
-| S3-T01 | Build X12 270/271 eligibility request/response parser: generate 270 from patient demographics, parse 271 response into structured benefits | B | 6h | S1-T01 | 270 request generated from FHIR Patient, 271 parsed into coverage details | pending |
-| S3-T02 | Integrate with eligibility clearinghouse (Availity or Change Healthcare sandbox): REST API integration, credential management via Secrets Manager | B | 4h | S3-T01 | Real-time eligibility check returns active/inactive + benefit details | pending |
-| S3-T03 | Build eligibility verification UI: patient search, run check, display coverage, copay, deductible, coinsurance, prior auth requirements | B | 4h | S3-T02 | Front desk can verify eligibility before appointment, results displayed clearly | pending |
-| S3-T04 | Build AI coding engine: Claude analyzes signed SOAP note + encounter data -> suggests ICD-10 (diagnosis) + CPT (procedure) codes with confidence and rationale | A | 6h | S2-T05 | AI suggests codes with > 85% accuracy vs human coder on test cases | pending |
-| S3-T05 | Build coding review UI: display AI-suggested codes alongside note, search/add/remove codes, display code descriptions, accept all or modify | B | 4h | S3-T04 | Billing staff can review AI codes, modify, and finalize for claim | pending |
-| S3-T06 | Implement CMS-1500 claim generation: build claim from Encounter + Patient + Provider + Diagnosis + Procedure codes + Insurance info | A | 6h | S3-T04, S3-T02 | CMS-1500 generated with all required fields populated correctly | pending |
-| S3-T07 | Build X12 837P (professional claim) generator: convert CMS-1500 to EDI 837P format, validate against X12 specs | A | 4h | S3-T06 | 837P file generated, passes X12 syntax validation | pending |
-| S3-T08 | Build claims submission pipeline: 837P -> clearinghouse -> acknowledgment tracking, store claim status in FHIR Claim resource | A | 3h | S3-T07, S3-T02 | Claim submitted to sandbox, acknowledgment received and stored | pending |
-| S3-T09 | Build X12 835 (remittance) parser: parse ERA into payment details, adjustment reason codes, patient responsibility amounts | B | 4h | -- | 835 parsed into structured payment data, linked to original claim | pending |
-| S3-T10 | Build claims dashboard: list of claims by status (pending/submitted/accepted/denied/paid), filterable by date/provider/payer | B | 4h | S3-T08 | Billing staff sees claim lifecycle, can drill into details | pending |
-| S3-T11 | Implement AI denial prediction: Claude analyzes claim before submission, flags likely denial reasons, suggests modifications | A | 4h | S3-T04, S3-T07 | Claims flagged with denial probability, reasons listed, modifications suggested | pending |
-| S3-T12 | Sprint 3 end-to-end test: encounter -> AI coding -> review -> claim generation -> submission -> acknowledgment | BOTH | 4h | ALL | Full revenue cycle works: encounter to submitted claim | pending |
+| S3-T01 | Build X12 270/271 eligibility request/response parser: generate 270 from patient demographics, parse 271 response into structured benefits | B | 6h | S1-T01 | 270 request generated from FHIR Patient, 271 parsed into coverage details | done |
+| S3-T02 | Integrate with eligibility clearinghouse (Availity or Change Healthcare sandbox): REST API integration, credential management via Secrets Manager | B | 4h | S3-T01 | Real-time eligibility check returns active/inactive + benefit details | done |
+| S3-T03 | Build eligibility verification UI: patient search, run check, display coverage, copay, deductible, coinsurance, prior auth requirements | B | 4h | S3-T02 | Front desk can verify eligibility before appointment, results displayed clearly | done |
+| S3-T04 | Build AI coding engine: Claude analyzes signed SOAP note + encounter data -> suggests ICD-10 (diagnosis) + CPT (procedure) codes with confidence and rationale | A | 6h | S2-T05 | AI suggests codes with > 85% accuracy vs human coder on test cases | done |
+| S3-T05 | Build coding review UI: display AI-suggested codes alongside note, search/add/remove codes, display code descriptions, accept all or modify | B | 4h | S3-T04 | Billing staff can review AI codes, modify, and finalize for claim | done |
+| S3-T06 | Implement CMS-1500 claim generation: build claim from Encounter + Patient + Provider + Diagnosis + Procedure codes + Insurance info | A | 6h | S3-T04, S3-T02 | CMS-1500 generated with all required fields populated correctly | done |
+| S3-T07 | Build X12 837P (professional claim) generator: convert CMS-1500 to EDI 837P format, validate against X12 specs | A | 4h | S3-T06 | 837P file generated, passes X12 syntax validation | done |
+| S3-T08 | Build claims submission pipeline: 837P -> clearinghouse -> acknowledgment tracking, store claim status in FHIR Claim resource | A | 3h | S3-T07, S3-T02 | Claim submitted to sandbox, acknowledgment received and stored | done |
+| S3-T09 | Build X12 835 (remittance) parser: parse ERA into payment details, adjustment reason codes, patient responsibility amounts | B | 4h | -- | 835 parsed into structured payment data, linked to original claim | done |
+| S3-T10 | Build claims dashboard: list of claims by status (pending/submitted/accepted/denied/paid), filterable by date/provider/payer | B | 4h | S3-T08 | Billing staff sees claim lifecycle, can drill into details | done |
+| S3-T11 | Implement AI denial prediction: Claude analyzes claim before submission, flags likely denial reasons, suggests modifications | A | 4h | S3-T04, S3-T07 | Claims flagged with denial probability, reasons listed, modifications suggested | done |
+| S3-T12 | Sprint 3 end-to-end test: encounter -> AI coding -> review -> claim generation -> submission -> acknowledgment | BOTH | 4h | ALL | Full revenue cycle works: encounter to submitted claim | done |
 
 ### Sprint 3 Deliverables
 - Real-time eligibility verification (X12 270/271)
@@ -360,11 +372,15 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 ## Sprint 4: Revenue Cycle v2
 
-**Sprint Goal:** Add prior authorization automation, denial management, and revenue analytics -- the features that generate the highest ROI for practices.
+**Sprint Goal:** Add prior authorization automation, denial management, revenue analytics, and complete the X12 claims pipeline (837P generation, scrubbing, 835 parsing, payment posting) -- the features that generate the highest ROI for practices.
 
 **Sprint Dates:** 2026-04-26 to 2026-05-09 (10 working days)
 
-**References:** [[EPIC-005-revenue-cycle-mvp]], [[Prior-Authorization-Deep-Dive]], [[X12-EDI-Deep-Dive]]
+**Status:** in-progress
+
+**References:** [[EPIC-005-revenue-cycle-mvp]], [[EPIC-009-revenue-cycle-completion]], [[Prior-Authorization-Deep-Dive]], [[X12-EDI-Deep-Dive]], [[Revenue-Cycle-Deep-Dive]]
+
+**Note:** Sprint 4 now includes both the original Revenue Cycle v2 tasks and the Revenue Cycle Completion epic ([[EPIC-009-revenue-cycle-completion]]). EPIC-009 covers: X12 837P claims generator, claims scrubbing engine, X12 835 remittance parser, payment posting, 4 new claims pipeline MCP tools, and claims analytics frontend.
 
 | ID | Task | Owner | Est. | Deps | Acceptance Criteria | Status |
 |----|------|-------|------|------|---------------------|--------|
@@ -380,6 +396,12 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 | S4-T10 | Build AI underpayment detector: compare remittance amounts against contracted rates, flag underpayments | A | 4h | S3-T09 | Underpayments flagged with expected vs actual amount and variance | pending |
 | S4-T11 | Implement FHIR ClaimResponse and ExplanationOfBenefit resources for tracking claim outcomes | A | 3h | S3-T08 | Claim outcomes stored as FHIR resources, searchable by status/date/payer | pending |
 | S4-T12 | Sprint 4 end-to-end test: encounter -> PA required -> submit PA -> approved -> claim -> ERA -> analytics | BOTH | 4h | ALL | Full revenue cycle with PA works end-to-end, analytics reflect data | pending |
+| S4-T13 | X12 837P Claims Generator: generate HIPAA-compliant 005010X222A1 professional claims from FHIR Claim resources | A | 6h | -- | 837P output valid, all required segments populated, batch mode works | in-progress |
+| S4-T14 | Claims Scrubbing Rules Engine: pre-submission validation with 15+ rules, denial risk scoring | A | 4h | S4-T13 | 15+ rules implemented, denial risk score calculated, error-level blocks submission | in-progress |
+| S4-T15 | X12 835 Remittance Parser: parse ERA files into structured payment, adjustment, and patient responsibility data | A | 4h | -- | Parser handles 005010X221A1, extracts CLP/CAS/SVC/PLB segments | in-progress |
+| S4-T16 | Payment Posting Module: match 835 payments to claims, calculate patient responsibility, detect underpayments | A | 3h | S4-T15 | Payments matched, claim status updated, FHIR ExplanationOfBenefit created | pending |
+| S4-T17 | Claims Pipeline MCP Tools: 4 new billing tools (generate, scrub, post, analytics) | A | 4h | S4-T13, S4-T14, S4-T15, S4-T16 | 4 tools registered via @hipaa_tool, total 36 MCP tools | pending |
+| S4-T18 | Claims Analytics Frontend: dashboard with clean claim rate, denial breakdown, AR aging | B | 4h | S4-T13, S4-T14, S4-T16 | Charts rendered, filters working, no PHI on analytics page | pending |
 
 ### Sprint 4 Deliverables
 - Prior auth automation (X12 278 request/response)
@@ -387,6 +409,12 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 - Denial management with AI-drafted appeal letters
 - Revenue analytics dashboard
 - Underpayment detection
+- X12 837P claims generator (005010X222A1 compliant)
+- Claims scrubbing engine (15+ rules, denial risk scoring)
+- X12 835 remittance parser
+- Payment posting module with underpayment detection
+- 4 new claims pipeline MCP tools (total: 36 MCP tools)
+- Claims analytics frontend dashboard
 
 ### Sprint 4 Risks
 | Risk | Mitigation |
@@ -402,6 +430,13 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 - AI generates appeal letter with clinical justification
 - Revenue analytics show accurate metrics from test data
 - Underpayment detection flags discrepancies
+- X12 837P generator producing valid 005010X222A1 output
+- Claims scrubber catching 15+ denial types with risk scoring
+- X12 835 parser extracting payment, adjustment, and patient responsibility data
+- Payment posting matching 835 payments to submitted claims
+- 4 new MCP tools registered (total: 36 tools)
+- Claims analytics on frontend with charts
+- 220+ tests passing, ruff clean
 
 ---
 
@@ -564,10 +599,10 @@ W13    | Prod deploy, demo env, backups     | Pilot onboarding, training
 | S1 | 15 | 8 | 6 | 1 | ~58h |
 | S2 | 14 | 8 | 5 | 1 | ~58h |
 | S3 | 12 | 6 | 5 | 1 | ~53h |
-| S4 | 12 | 5 | 6 | 1 | ~51h |
+| S4 | 18 | 10 | 7 | 1 | ~76h |
 | S5 | 12 | 6 | 5 | 1 | ~54h |
 | S6 | 9 | 4 | 4 | 1 | ~33h |
-| **Total** | **117** | **61** | **48** | **8** | **~437h** |
+| **Total** | **123** | **66** | **49** | **8** | **~462h** |
 
 At 8h/day per person, 10 days/sprint = 160h/sprint for the team. Each sprint uses 30-80% of available capacity, leaving buffer for unexpected issues, debugging, meetings, and pilot relationship management.
 
@@ -583,6 +618,9 @@ At 8h/day per person, 10 days/sprint = 160h/sprint for the team. Each sprint use
 | [[EPIC-004-ai-clinical-documentation]] | S2 | S3 (AI coding uses same pipeline) |
 | [[EPIC-005-revenue-cycle-mvp]] | S3, S4 | S2 (ICD-10/CPT from notes) |
 | [[EPIC-006-pilot-readiness]] | S5, S6 | All sprints contribute compliance evidence |
+| [[EPIC-007-mcp-sdk-refactoring]] | S2 | S3 (agent runner consumes MCP tools) |
+| [[EPIC-008-demo-polish]] | S3 | S2 (builds on 32 MCP tools + 3 agents) |
+| [[EPIC-009-revenue-cycle-completion]] | S4 | S3 (builds on eligibility + coding + claims base) |
 
 ---
 
