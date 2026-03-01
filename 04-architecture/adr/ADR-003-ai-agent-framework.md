@@ -277,7 +277,14 @@ Build our own state machine library tailored to healthcare.
 - [[HEALTHCARE_OS_MASTERPLAN]] -- AI integration vision and module definitions
 - [[ADR-001-fhir-native-data-model]] -- FHIR data consumed by AI agents
 - [[ADR-004-fastapi-backend-architecture]] -- Backend serving agent endpoints
+- [[ADR-005-mcp-sdk-integration]] -- HIPAAFastMCP security pipeline for agent tool calls
 - [[Revenue-Cycle-Deep-Dive]] -- Medical coding and billing workflows that agents automate
+- [[agent-architecture]] -- Full agent specification (5 agents, bounded autonomy)
+- [[mcp-integration-plan]] -- MCP tool catalog consumed by agents
+- [[context-rotting-and-agent-memory]] -- Agent memory architecture and context rot detection
+- [[EPIC-004-ai-clinical-documentation]] -- Clinical Scribe agent implementation
+- [[EPIC-007-mcp-sdk-refactoring]] -- Prior Auth + Denial Management agent implementation
+- [[EPIC-008-demo-polish]] -- Agent Runner API and patient intake workflow
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
 - [Anthropic Claude API](https://docs.anthropic.com/en/docs)
 - [Anthropic HIPAA BAA](https://www.anthropic.com/trust)

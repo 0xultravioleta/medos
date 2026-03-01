@@ -191,6 +191,9 @@ Store relationally, cache FHIR representations.
 - [[ADR-002-multi-tenancy-schema-per-tenant]] -- Tenant isolation strategy that builds on this schema
 - [[ADR-003-ai-agent-framework]] -- AI agent architecture that consumes FHIR data
 - [[ADR-004-fastapi-backend-architecture]] -- Backend framework that implements the data access layer
+- [[EPIC-003-fhir-data-layer]] -- FHIR data layer implementation tasks
+- [[EPIC-007-mcp-sdk-refactoring]] -- FHIR MCP server migration to @hipaa_tool
+- [[EPIC-008-demo-polish]] -- Sprint 3 seed data and frontend FHIR integration
 - [PostgreSQL JSONB Documentation](https://www.postgresql.org/docs/17/datatype-json.html)
 - [pgvector](https://github.com/pgvector/pgvector)
 - [HL7 FHIR R4 Specification](https://hl7.org/fhir/R4/)

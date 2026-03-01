@@ -258,6 +258,8 @@ Each tenant gets their own compute and database instances.
 - [[HIPAA-Deep-Dive]] -- PHI isolation requirements and breach notification rules
 - [[ADR-001-fhir-native-data-model]] -- FHIR data model that lives within each tenant schema
 - [[ADR-004-fastapi-backend-architecture]] -- Backend framework implementing tenant middleware
+- [[EPIC-001-aws-infrastructure-foundation]] -- AWS infrastructure with per-tenant KMS keys
+- [[mcp-integration-plan]] -- MCP Gateway enforces tenant isolation on every tool call
 - [PostgreSQL Row Level Security](https://www.postgresql.org/docs/17/ddl-rowsecurity.html)
 - [PostgreSQL Schemas](https://www.postgresql.org/docs/17/ddl-schemas.html)
 - [AWS KMS Encryption Context](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#encrypt_context)

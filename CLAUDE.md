@@ -89,6 +89,7 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | `04-architecture/adr/ADR-002-*` | Schema-per-tenant + RLS + KMS |
 | `04-architecture/adr/ADR-003-*` | LangGraph + Claude agents |
 | `04-architecture/adr/ADR-004-*` | FastAPI backend structure |
+| `04-architecture/adr/ADR-005-*` | HIPAAFastMCP hybrid MCP SDK approach |
 | `04-architecture/system-design/System-Architecture-Overview.md` | Arquitectura completa |
 
 ### Domain Knowledge (por que asi)
@@ -104,6 +105,12 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | `05-domain/clinical/Clinical-Workflows-Overview.md` | Patient journey map |
 | `05-domain/clinical/Patient-Engagement-Patterns.md` | RPM, telehealth, scheduling |
 | `05-domain/clinical/Population-Health-Analytics.md` | HCC, HEDIS, MIPS |
+
+### Sprint 2 Files
+| Archivo | Proposito |
+|---------|-----------|
+| `03-projects/EPIC-007-*` | MCP SDK refactoring + Sprint 2 scope |
+| `04-architecture/adr/ADR-005-*` | HIPAAFastMCP decision |
 
 ### Engineering (guias de implementacion)
 | Archivo | Guia |
@@ -179,6 +186,20 @@ Cuando una task se complete, actualizar `Status` en la tabla del execution plan:
 | Templater | Instalado | Templates con variables |
 | Calendar | Pendiente | Daily notes visual |
 | Git | Pendiente | Backup automatico |
+
+---
+
+## VAULT MAINTENANCE PROTOCOL
+
+When working in the MedOS Obsidian vault, proactively maintain architectural coherence:
+
+- **Cross-reference updates:** When creating or modifying code, update corresponding vault docs (`04-architecture/`, `03-projects/`) with `[[wikilinks]]` to related files
+- **Diagram freshness:** Keep Mermaid diagrams in `04-architecture/system-design/` in sync with actual code architecture. Update diagrams when adding new MCP servers, agents, or routes
+- **Execution plan tracking:** Update task status in `PHASE-1-EXECUTION-PLAN.md` as tasks complete: `pending` -> `in-progress` -> `done`
+- **ADR discipline:** For architectural decisions (framework changes, integration patterns), create a new ADR in `04-architecture/adr/` before implementing
+- **Epic coverage:** Ensure every significant feature maps to an Epic in `03-projects/`
+- **Wikilink hygiene:** Use `[[wikilinks]]` for internal references, never raw file paths
+- **Frontmatter compliance:** Every new `.md` file gets YAML frontmatter with `type`, `date`, `tags`
 
 ---
 
