@@ -376,7 +376,7 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 
 **Sprint Dates:** 2026-04-26 to 2026-05-09 (10 working days)
 
-**Status:** in-progress
+**Status:** done
 
 **References:** [[EPIC-005-revenue-cycle-mvp]], [[EPIC-009-revenue-cycle-completion]], [[Prior-Authorization-Deep-Dive]], [[X12-EDI-Deep-Dive]], [[Revenue-Cycle-Deep-Dive]]
 
@@ -393,9 +393,9 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 | S4-T07 | Build appeal letter generator: pull relevant clinical data from patient chart, format per payer requirements, include supporting literature | A | 4h | S4-T06 | Appeal letter generated with clinical evidence, ready for provider signature | done |
 | S4-T08 | Build denial tracking dashboard: denied claims, denial reasons, appeal status, win rate metrics | B | 4h | S4-T06 | Billing staff sees denied claims, appeal pipeline, historical win rates | done |
 | S4-T09 | Build revenue analytics dashboard: total charges, collections, denial rate, days in AR, clean claim rate, payer mix | B | 6h | S3-T09, S3-T10 | Practice sees key revenue metrics with trend lines and benchmarks | done |
-| S4-T10 | Build AI underpayment detector: compare remittance amounts against contracted rates, flag underpayments | A | 4h | S3-T09 | Underpayments flagged with expected vs actual amount and variance | pending |
-| S4-T11 | Implement FHIR ClaimResponse and ExplanationOfBenefit resources for tracking claim outcomes | A | 3h | S3-T08 | Claim outcomes stored as FHIR resources, searchable by status/date/payer | pending |
-| S4-T12 | Sprint 4 end-to-end test: encounter -> PA required -> submit PA -> approved -> claim -> ERA -> analytics | BOTH | 4h | ALL | Full revenue cycle with PA works end-to-end, analytics reflect data | pending |
+| S4-T10 | Build AI underpayment detector: compare remittance amounts against contracted rates, flag underpayments | A | 4h | S3-T09 | Underpayments flagged with expected vs actual amount and variance | done |
+| S4-T11 | Implement FHIR ClaimResponse and ExplanationOfBenefit resources for tracking claim outcomes | A | 3h | S3-T08 | Claim outcomes stored as FHIR resources, searchable by status/date/payer | done |
+| S4-T12 | Sprint 4 end-to-end test: encounter -> PA required -> submit PA -> approved -> claim -> ERA -> analytics | BOTH | 4h | ALL | Full revenue cycle with PA works end-to-end, analytics reflect data | done |
 | S4-T13 | X12 837P Claims Generator: generate HIPAA-compliant 005010X222A1 professional claims from FHIR Claim resources | A | 6h | -- | 837P output valid, all required segments populated, batch mode works | done |
 | S4-T14 | Claims Scrubbing Rules Engine: pre-submission validation with 18 rules, denial risk scoring | A | 4h | S4-T13 | 18 rules implemented, denial risk score calculated, error-level blocks submission | done |
 | S4-T15 | X12 835 Remittance Parser: parse ERA files into structured payment, adjustment, and patient responsibility data | A | 4h | -- | Parser handles 005010X221A1, extracts CLP/CAS/SVC/PLB segments | done |
@@ -452,13 +452,13 @@ EPIC-002 (Auth & Identity) ──────> EPIC-003 (FHIR Data Layer)
 |----|------|-------|------|------|---------------------|--------|
 | S5-T01 | HIPAA Security Risk Assessment: document all PHI flows, identify risks, document mitigations, create risk register | B | 6h | ALL | Risk assessment document complete, all high risks have mitigations | pending |
 | S5-T02 | Third-party penetration test: scope, engage vendor, remediate critical/high findings | A | 8h | ALL | Pen test complete, zero critical findings, all high findings remediated | pending |
-| S5-T03 | Security hardening checklist: WAF rules tuned, rate limiting configured, input validation comprehensive, error messages sanitized (no PHI in errors) | A | 4h | S0-T15 | All OWASP Top 10 mitigated, error responses contain no PHI | pending |
+| S5-T03 | Security hardening checklist: WAF rules tuned, rate limiting configured, input validation comprehensive, error messages sanitized (no PHI in errors) | A | 4h | S0-T15 | All OWASP Top 10 mitigated, error responses contain no PHI | done |
 | S5-T04 | Implement field-level encryption for SSN and sensitive identifiers using per-tenant KMS keys | A | 4h | S0-T08, S0-T33 | SSN encrypted at field level, decrypted only with tenant key, database inspection shows ciphertext | pending |
-| S5-T05 | Build tenant onboarding wizard: organization info, admin user creation, practice configuration (specialties, locations, providers, payers) | B | 6h | S0-T33 | New practice can self-onboard: org created, admin account active, basic config complete | pending |
+| S5-T05 | Build tenant onboarding wizard: organization info, admin user creation, practice configuration (specialties, locations, providers, payers) | B | 6h | S0-T33 | New practice can self-onboard: org created, admin account active, basic config complete | done |
 | S5-T06 | Build data migration tool: import patient demographics from CSV/HL7v2, validate against FHIR, create Patient resources, run matching | A | 6h | S1-T06 | CSV of 1000 patients imported with dedup, < 5% manual review rate | pending |
 | S5-T07 | Create EHR integration bridge: FHIR R4 client for reading patient data from Epic/Cerner sandbox, bidirectional sync for demographics | A | 6h | S1-T01 | Read patient from Epic sandbox FHIR API, create corresponding MedOS patient | pending |
 | S5-T08 | Create user training materials: video walkthroughs (Loom) for provider workflow, billing workflow, admin workflow | B | 6h | S2-T09, S3-T10 | 3 training videos (< 10 min each), covering core workflows | pending |
-| S5-T09 | Build practice configuration panel: manage providers, locations, fee schedules, payer contracts, specialty settings | B | 4h | S5-T05 | Admin can configure all practice parameters without technical support | pending |
+| S5-T09 | Build practice configuration panel: manage providers, locations, fee schedules, payer contracts, specialty settings | B | 4h | S5-T05 | Admin can configure all practice parameters without technical support | done |
 | S5-T10 | Implement monitoring and alerting: CloudWatch dashboards for API latency/errors/throughput, PagerDuty integration for critical alerts | A | 3h | S0-T17 | Dashboards show key metrics, alerts fire on error rate > 5% or P99 > 2s | pending |
 | S5-T11 | Create incident response playbook: procedures for data breach, system outage, security incident, on-call rotation | B | 3h | -- | Playbook documented, contact list current, tested with tabletop exercise | pending |
 | S5-T12 | Load testing: simulate 50 concurrent users, 100 encounters/hour, verify system handles pilot load | A | 4h | ALL | System handles pilot load with P99 < 1s, no errors, no data loss | pending |
